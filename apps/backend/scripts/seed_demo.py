@@ -324,10 +324,10 @@ async def seed() -> None:
         print(f"  Micro-goals:  {len(program_goals)}")
         print()
         print("Demo users:")
-        print("  coord1@impactflow.dev  / coord123  → Coordinadora")
-        print("  prof1@impactflow.dev   / prof123   → Professional")
-        print("  donor@impactflow.dev   / donor123  → Donant")
-        print("  admin@impactflow.dev   / admin123  → Admin")
+        print("  coord1@impactflow.dev  / coord123  [Coordinadora]")
+        print("  prof1@impactflow.dev   / prof123   [Professional]")
+        print("  donor@impactflow.dev   / donor123  [Donant]")
+        print("  admin@impactflow.dev   / admin123  [Admin]")
         print("=" * 50)
 
 
