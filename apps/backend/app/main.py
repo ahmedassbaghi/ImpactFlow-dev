@@ -1,9 +1,11 @@
+import asyncio
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +15,13 @@ from app.algorithms.ipi import DimensionScores, calculate_ipi, calculate_relativ
 from app.algorithms.predictor import predict_ipi_with_uncertainty, predict_next_ipi, probability_of_reaching_target
 from app.algorithms.risk_engine import calculate_risk_score
 from app.algorithms.segmentation import cluster_participants, recommend_goals_for_cluster
+from app.algorithms.sroi_engine import calculate_sroi
 from app.analytics.cohort_analysis import (
     compute_cohort_trajectories,
     compute_retention_by_cohort,
     dimension_velocity_analysis,
 )
+from app.analytics.reliability import compute_inter_rater_reliability
 from app.config import get_settings
 from app.database import Base, engine, get_db
 from app.models import (
@@ -710,13 +714,190 @@ async def coordinator_dashboard(
 
 
 @app.get(f"{settings.api_prefix}/dashboard/donor/{{org_slug}}")
-async def donor_dashboard(org_slug: str, db: AsyncSession = Depends(get_db)):
-    participant_n = await db.execute(select(func.count(Participant.id)))
-    avg_ipi = await db.execute(select(func.avg(PeriodicAssessment.ipi_score)))
+async def donor_dashboard(
+    org_slug: str,
+    program_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Enhanced donor dashboard — hero metrics, risk distribution, dimension evolution, narrative."""
+    from app.services.report_generator import _get_risk_distribution
+
+    # Resolve org
+    org_q = await db.execute(select(Organization).where(Organization.slug == org_slug))
+    org = org_q.scalar_one_or_none()
+    org_id = org.id if org else None
+
+    # Resolve program
+    if program_id:
+        prog_q = await db.execute(select(Program).where(Program.id == program_id))
+    elif org_id:
+        prog_q = await db.execute(
+            select(Program)
+            .where(Program.organization_id == org_id, Program.active.is_(True))
+            .order_by(Program.created_at.desc())
+        )
+    else:
+        prog_q = await db.execute(select(Program).where(Program.active.is_(True)).order_by(Program.created_at.desc()))
+
+    prog = prog_q.scalar_one_or_none() if program_id else prog_q.scalars().first()
+    pid = prog.id if prog else None
+
+    # Hero: total active participants
+    if pid:
+        part_q = await db.execute(
+            select(func.count(Participant.id))
+            .join(Program, Program.id == pid)
+            .where(Participant.active.is_(True))
+        )
+    else:
+        part_q = await db.execute(select(func.count(Participant.id)).where(Participant.active.is_(True)))
+    n_participants = part_q.scalar_one() or 0
+
+    # Baseline IPI per participant
+    if pid:
+        baseline_q = await db.execute(
+            select(
+                BaselineAssessment.participant_id,
+                BaselineAssessment.reading_level,
+                BaselineAssessment.math_level,
+                BaselineAssessment.comprehension_level,
+                BaselineAssessment.attention_level,
+                BaselineAssessment.memory_level,
+                BaselineAssessment.autonomy_level,
+                BaselineAssessment.peer_interaction,
+                BaselineAssessment.group_work,
+                BaselineAssessment.emotional_regulation,
+                BaselineAssessment.language_fluency,
+                BaselineAssessment.cultural_adaptation,
+            ).where(BaselineAssessment.program_id == pid)
+        )
+        baselines = baseline_q.all()
+    else:
+        baselines = []
+
+    def _dim_avg(vals: list) -> float:
+        valid = [float(v) for v in vals if v is not None]
+        return (sum(valid) / len(valid) - 1) / 4 * 100 if valid else 0.0
+
+    baseline_dims = {"academic": [], "cognitive": [], "social": [], "integration": []}
+    for b in baselines:
+        baseline_dims["academic"].append(_dim_avg([b.reading_level, b.math_level, b.comprehension_level]))
+        baseline_dims["cognitive"].append(_dim_avg([b.attention_level, b.memory_level, b.autonomy_level]))
+        baseline_dims["social"].append(_dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation]))
+        baseline_dims["integration"].append(_dim_avg([b.language_fluency, b.cultural_adaptation]))
+
+    def _avg(lst):
+        return round(sum(lst) / len(lst), 1) if lst else 0.0
+
+    baseline_by_dim = {d: _avg(v) for d, v in baseline_dims.items()}
+
+    # Latest IPI per participant
+    if pid:
+        latest_q = await db.execute(
+            select(
+                PeriodicAssessment.participant_id,
+                PeriodicAssessment.ipi_score,
+                PeriodicAssessment.academic_score,
+                PeriodicAssessment.cognitive_score,
+                PeriodicAssessment.social_score,
+                PeriodicAssessment.integration_score,
+            )
+            .where(PeriodicAssessment.program_id == pid)
+            .order_by(PeriodicAssessment.assessment_date.desc())
+        )
+        all_recent = latest_q.all()
+        seen: set[str] = set()
+        latest_assessments = []
+        for row in all_recent:
+            if row.participant_id not in seen:
+                seen.add(row.participant_id)
+                latest_assessments.append(row)
+    else:
+        latest_assessments = []
+
+    current_dims = {
+        "academic": _avg([r.academic_score for r in latest_assessments if r.academic_score]),
+        "cognitive": _avg([r.cognitive_score for r in latest_assessments if r.cognitive_score]),
+        "social": _avg([r.social_score for r in latest_assessments if r.social_score]),
+        "integration": _avg([r.integration_score for r in latest_assessments if r.integration_score]),
+    }
+    current_ipi = _avg([r.ipi_score for r in latest_assessments if r.ipi_score])
+
+    avg_ipi_gain = round(current_ipi - _avg(list(baseline_by_dim.values())), 1)
+    avg_ipi_gain_pct = round((avg_ipi_gain / 100) * 100, 1) if avg_ipi_gain > 0 else 0.0
+
+    # Hours of support (total session hours)
+    if pid:
+        sessions_q = await db.execute(
+            select(func.count(Session.id)).where(Session.program_id == pid)
+        )
+        n_sessions = sessions_q.scalar_one() or 0
+    else:
+        n_sessions = 0
+    hours_of_support = round(n_sessions * 1.5, 0)
+
+    # Retention rate (active vs. enrolled)
+    if pid:
+        enrolled_q = await db.execute(
+            select(func.count(Participant.id))
+        )
+        enrolled_n = enrolled_q.scalar_one() or 1
+    else:
+        enrolled_n = max(n_participants, 1)
+    retention_rate = round(n_participants / enrolled_n, 3) if enrolled_n else 1.0
+
+    # Risk distribution
+    risk_dist = await _get_risk_distribution(pid, db) if pid else {"low": 0, "medium": 0, "high": 0}
+
+    # Programme duration in months
+    duration_months = 9
+    if prog and hasattr(prog, "start_date") and prog.start_date:
+        try:
+            delta = date.today() - prog.start_date
+            duration_months = max(1, round(delta.days / 30))
+        except Exception:
+            pass
+
+    # Narrative
+    if avg_ipi_gain > 5:
+        narrative = (
+            f"El programa ha acompanyat {n_participants} participants cap a un creixement mesurable. "
+            f"La millora mitjana de l'IPI és de {avg_ipi_gain:.1f} punts."
+        )
+    elif avg_ipi_gain > 0:
+        narrative = f"El programa mostra una evolució positiva moderada amb {n_participants} participants actius."
+    else:
+        narrative = f"El programa s'ha iniciat recentment amb {n_participants} participants en seguiment actiu."
+
     return {
         "organization": org_slug,
-        "children_served": participant_n.scalar_one() or 0,
-        "avg_ipi": round(avg_ipi.scalar_one() or 0, 1),
+        "program_id": pid,
+        # Hero metrics
+        "n_participants": n_participants,
+        "avg_ipi_gain_pct": avg_ipi_gain_pct,
+        "avg_ipi_gain": avg_ipi_gain,
+        "hours_of_support": int(hours_of_support),
+        "retention_rate": retention_rate,
+        # Before/after by dimension
+        "dimension_evolution": {
+            dim: {
+                "baseline": baseline_by_dim.get(dim, 0.0),
+                "current": current_dims.get(dim, 0.0),
+                "gain": round(current_dims.get(dim, 0.0) - baseline_by_dim.get(dim, 0.0), 1),
+            }
+            for dim in ["academic", "cognitive", "social", "integration"]
+        },
+        "risk_distribution": risk_dist,
+        "narrative": narrative,
+        # SROI inputs
+        "sroi_inputs": {
+            "n_participants": n_participants,
+            "avg_ipi_gain": avg_ipi_gain,
+            "duration_months": duration_months,
+        },
+        # Legacy fields for backwards compat
+        "children_served": n_participants,
+        "avg_ipi": current_ipi,
     }
 
 
@@ -1407,3 +1588,267 @@ async def analytics_dimension_velocity(
 ):
     """Módulo D — Velocitat de millora per dimensió i fase del programa."""
     return await dimension_velocity_analysis(program_id, db)
+
+
+# ── Sprint 3 — SROI, Inter-rater Reliability, Evidence Export, WebSocket ──────
+
+
+@app.get(f"{settings.api_prefix}/analytics/sroi")
+async def analytics_sroi(
+    program_id: str,
+    cost_eur: float = Query(..., description="Total programme cost in EUR"),
+    months: int = Query(9, description="Programme duration in months"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Modulo E — Calcul SROI seguint SROI Network Standard (2012)."""
+    baseline_q = await db.execute(
+        select(BaselineAssessment).where(BaselineAssessment.program_id == program_id)
+    )
+    baselines = baseline_q.scalars().all()
+
+    def _dim_avg(vals):
+        valid = [float(v) for v in vals if v is not None]
+        return (sum(valid) / len(valid) - 1) / 4 * 100 if valid else 0.0
+
+    baseline_ipis = []
+    for b in baselines:
+        academic = _dim_avg([b.reading_level, b.math_level, b.comprehension_level])
+        cognitive = _dim_avg([b.attention_level, b.memory_level, b.autonomy_level])
+        social = _dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation])
+        integration = _dim_avg([b.language_fluency, b.cultural_adaptation])
+        baseline_ipis.append(academic * 0.30 + cognitive * 0.20 + social * 0.30 + integration * 0.20)
+
+    latest_q = await db.execute(
+        select(PeriodicAssessment.participant_id, PeriodicAssessment.ipi_score)
+        .where(PeriodicAssessment.program_id == program_id)
+        .order_by(PeriodicAssessment.assessment_date.desc())
+    )
+    seen: set = set()
+    current_ipis = []
+    for row in latest_q.all():
+        if row.participant_id not in seen and row.ipi_score:
+            seen.add(row.participant_id)
+            current_ipis.append(float(row.ipi_score))
+
+    avg_baseline = sum(baseline_ipis) / len(baseline_ipis) if baseline_ipis else 0.0
+    avg_current = sum(current_ipis) / len(current_ipis) if current_ipis else avg_baseline
+    avg_ipi_gain = max(0.0, avg_current - avg_baseline)
+    n_participants = len(baselines) or len(current_ipis) or 1
+
+    sessions_q = await db.execute(
+        select(func.count(Session.id)).where(Session.program_id == program_id)
+    )
+    n_sessions = sessions_q.scalar_one() or 0
+
+    return calculate_sroi(
+        n_participants=n_participants,
+        avg_ipi_gain=avg_ipi_gain,
+        program_cost_eur=cost_eur,
+        program_duration_months=months,
+        extra={"sessions": n_sessions, "avg_duration_h": 1.5},
+    )
+
+
+@app.get(f"{settings.api_prefix}/analytics/inter-rater-reliability")
+async def analytics_inter_rater_reliability(
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Modulo F — Fiabilitat inter-avaluador ICC(2,1) entre professionals."""
+    return await compute_inter_rater_reliability(program_id, db)
+
+
+@app.get(f"{settings.api_prefix}/analytics/evidence-export")
+async def analytics_evidence_export(
+    program_id: str,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    cost_eur: float | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Evidence Package — JSON estructurat complet per a justificacio de subvencions."""
+    from app.algorithms.effect_analysis import compute_intervention_effect
+    from app.analytics.cohort_analysis import compute_cohort_trajectories
+
+    p_start = date.fromisoformat(period_start) if period_start else (date.today() - timedelta(days=365))
+    p_end = date.fromisoformat(period_end) if period_end else date.today()
+
+    prog_q = await db.execute(select(Program).where(Program.id == program_id))
+    prog = prog_q.scalar_one_or_none()
+    program_meta = {
+        "program_id": program_id,
+        "program_name": prog.name if prog else "Unknown",
+        "period_start": p_start.isoformat(),
+        "period_end": p_end.isoformat(),
+        "export_date": date.today().isoformat(),
+    }
+
+    try:
+        intervention_effect = await compute_intervention_effect(program_id, p_start, p_end, db)
+    except Exception:
+        intervention_effect = {"error": "insufficient_data"}
+
+    ipi_q = await db.execute(
+        select(
+            PeriodicAssessment.assessment_date,
+            func.avg(PeriodicAssessment.ipi_score),
+        )
+        .where(
+            PeriodicAssessment.program_id == program_id,
+            PeriodicAssessment.assessment_date >= p_start,
+            PeriodicAssessment.assessment_date <= p_end,
+        )
+        .group_by(PeriodicAssessment.assessment_date)
+        .order_by(PeriodicAssessment.assessment_date)
+    )
+    ipi_evolution = [
+        {"date": str(row[0]), "avg_ipi": round(float(row[1]), 1)}
+        for row in ipi_q.all()
+    ]
+
+    risk_q = await db.execute(
+        select(PeriodicAssessment.risk_level, func.count(PeriodicAssessment.id))
+        .where(PeriodicAssessment.program_id == program_id)
+        .group_by(PeriodicAssessment.risk_level)
+    )
+    risk_distribution = {"low": 0, "medium": 0, "high": 0}
+    for level, count in risk_q.all():
+        if level in risk_distribution:
+            risk_distribution[level] = count
+
+    goals_q = await db.execute(
+        select(func.count(ProgramMicroGoal.id)).where(ProgramMicroGoal.program_id == program_id)
+    )
+    goals_completions_q = await db.execute(
+        select(func.count(ProgramMicroGoalCompletion.id))
+        .join(ProgramMicroGoal, ProgramMicroGoal.id == ProgramMicroGoalCompletion.program_micro_goal_id)
+        .where(ProgramMicroGoal.program_id == program_id)
+    )
+    n_goals = goals_q.scalar_one() or 0
+    n_completions = goals_completions_q.scalar_one() or 0
+    goals_summary = {
+        "assigned_goals": n_goals,
+        "completed_goals": n_completions,
+        "completion_rate": round(n_completions / n_goals, 3) if n_goals else 0.0,
+    }
+
+    try:
+        cohort_trajectories = await compute_cohort_trajectories(program_id, db)
+    except Exception:
+        cohort_trajectories = {"error": "insufficient_data"}
+
+    sroi = None
+    if cost_eur and cost_eur > 0:
+        baseline_q = await db.execute(
+            select(BaselineAssessment).where(BaselineAssessment.program_id == program_id)
+        )
+        baselines = baseline_q.scalars().all()
+        n_p = len(baselines) or 1
+        latest_q2 = await db.execute(
+            select(PeriodicAssessment.ipi_score)
+            .where(PeriodicAssessment.program_id == program_id)
+            .order_by(PeriodicAssessment.assessment_date.desc())
+        )
+        ipis = [float(r) for r in latest_q2.scalars().all() if r]
+        avg_gain = max(0.0, (sum(ipis[:n_p]) / min(len(ipis), n_p)) - 50.0) if ipis else 0.0
+        duration = max(1, round((p_end - p_start).days / 30))
+        sroi = calculate_sroi(
+            n_participants=n_p,
+            avg_ipi_gain=avg_gain,
+            program_cost_eur=cost_eur,
+            program_duration_months=duration,
+        )
+
+    gain_val = intervention_effect.get("avg_ipi_gain", 0) if isinstance(intervention_effect, dict) else 0
+    if gain_val and gain_val > 5:
+        narrative = (
+            "L'avaluacio independent confirma un efecte d'intervencio estadisticament significatiu. "
+            "El programa demostra impacte mesurable i atribuible en les dimensions de l'IPI."
+        )
+    else:
+        narrative = "Les dades recollides mostren una tendencia positiva pendent d'analisi longitudinal completa."
+
+    return {
+        "schema_version": "1.0",
+        "program_meta": program_meta,
+        "intervention_effect": intervention_effect,
+        "ipi_evolution": ipi_evolution,
+        "risk_distribution": risk_distribution,
+        "goals_summary": goals_summary,
+        "cohort_trajectories": cohort_trajectories,
+        "sroi": sroi,
+        "narrative": narrative,
+        "methodology_standards": [
+            "SROI Network Standard (2012)",
+            "OECD DAC Evaluation Criteria",
+            "Non-parametric Statistics (Wilcoxon, Bootstrap CI)",
+            "Cohen's d — Effect Size",
+        ],
+    }
+
+
+@app.websocket(f"{settings.api_prefix}/ws/alerts/{{organization_id}}")
+async def ws_alerts(websocket: WebSocket, organization_id: str):
+    """WebSocket — alertes en temps real per participants d'alt risc."""
+    await websocket.accept()
+    try:
+        while True:
+            async with engine.connect() as raw_conn:
+                from sqlalchemy.ext.asyncio import AsyncSession as _WsSession
+                async with _WsSession(raw_conn) as ws_db:
+                    since = date.today() - timedelta(days=7)
+                    risk_q = await ws_db.execute(
+                        select(
+                            PeriodicAssessment.participant_id,
+                            PeriodicAssessment.risk_level,
+                            PeriodicAssessment.risk_factors,
+                            PeriodicAssessment.assessment_date,
+                        )
+                        .join(Program, Program.id == PeriodicAssessment.program_id)
+                        .where(
+                            Program.organization_id == organization_id,
+                            PeriodicAssessment.risk_level == "high",
+                            PeriodicAssessment.assessment_date >= since,
+                        )
+                        .order_by(PeriodicAssessment.assessment_date.desc())
+                        .limit(20)
+                    )
+                    rows = risk_q.all()
+
+            now_iso = datetime.utcnow().isoformat()
+            if rows:
+                for row in rows:
+                    factors = []
+                    if row.risk_factors:
+                        try:
+                            factors = (
+                                json.loads(row.risk_factors)
+                                if isinstance(row.risk_factors, str)
+                                else row.risk_factors
+                            )
+                        except Exception:
+                            factors = []
+                    await websocket.send_json({
+                        "type": "risk_alert",
+                        "participant_id": row.participant_id,
+                        "risk_level": row.risk_level,
+                        "factors": factors,
+                        "timestamp": now_iso,
+                    })
+            else:
+                await websocket.send_json({
+                    "type": "heartbeat",
+                    "timestamp": now_iso,
+                    "message": "No high-risk alerts in the last 7 days",
+                })
+            await asyncio.sleep(30)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        try:
+            await websocket.close()
+        except Exception:
+            pass

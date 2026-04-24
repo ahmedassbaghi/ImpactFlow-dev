@@ -922,3 +922,424 @@ button.btn-secondary {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Sprint 3 — Donor Portal ──────────────────────────────────────────────── */
+
+.donor-portal {
+  min-height: 100vh;
+  background: var(--surface-1);
+}
+
+/* Hero */
+.donor-hero {
+  background: var(--brand-900);
+  color: #fff;
+  padding: 4rem 2rem 3rem;
+  text-align: center;
+}
+
+.donor-hero-inner {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.donor-hero-eyebrow {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-300);
+  margin-bottom: 0.75rem;
+}
+
+.donor-hero-title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 0 0 0.75rem;
+}
+
+.donor-hero-subtitle {
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 2.5rem;
+}
+
+.donor-counters {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.donor-counter-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 1.25rem 2rem;
+  min-width: 160px;
+}
+
+.donor-counter-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+
+.donor-counter-label {
+  font-size: 0.78rem;
+  color: var(--brand-300);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.donor-cta-btn {
+  background: var(--brand-500);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.donor-cta-btn:hover {
+  background: var(--brand-700);
+}
+
+/* Sections */
+.donor-section {
+  padding: 3rem 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.donor-section-alt {
+  background: var(--surface-0);
+  max-width: 100%;
+  padding: 3rem 2rem;
+}
+
+.donor-section-alt > * {
+  max-width: 1000px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.donor-section-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.4rem;
+}
+
+.donor-section-sub {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 1.75rem;
+}
+
+/* Evidence grid */
+.donor-evidence-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.donor-evidence-grid .stat-evidence-card {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* Before/After */
+.before-after-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 1.25rem;
+}
+
+.before-after-item {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.before-after-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.before-after-dim {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.before-after-gain {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.before-after-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.before-after-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.before-after-bar-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.before-after-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--surface-3);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.before-after-bar {
+  height: 100%;
+  border-radius: 5px;
+}
+
+.before-after-bar-pct {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* SROI layout */
+.sroi-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* SROI Statement */
+.sroi-statement-card {
+  background: var(--brand-900);
+  color: #fff;
+  border-radius: 14px;
+  padding: 1.75rem 2rem;
+}
+
+.sroi-statement-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brand-300);
+  margin-bottom: 0.6rem;
+}
+
+.sroi-ratio {
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--brand-300);
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+
+.sroi-ratio-unit {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sroi-statement-text {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0.5rem 0;
+}
+
+.sroi-sensitivity {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.sroi-sensitivity-label {
+  margin-right: 0.35rem;
+}
+
+.sroi-sensitivity-range {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.sroi-methodology-note {
+  margin-top: 1rem;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 0.75rem;
+}
+
+/* SROI Breakdown */
+.sroi-breakdown {
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
+}
+
+.sroi-breakdown-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.sroi-breakdown-row {
+  margin-bottom: 1rem;
+}
+
+.sroi-breakdown-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.3rem;
+}
+
+.sroi-breakdown-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.sroi-breakdown-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sroi-breakdown-bar-track {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sroi-breakdown-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 1s ease;
+}
+
+.sroi-breakdown-total {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Methodology section */
+.methodology-layout {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.methodology-risk {
+  flex: 1;
+  min-width: 220px;
+}
+
+.methodology-risk-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.methodology-seals {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding-top: 0.5rem;
+}
+
+.methodology-seal {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.seal-icon {
+  width: 22px;
+  height: 22px;
+  background: var(--risk-low-bg);
+  color: var(--risk-low);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.donor-evidence-btn {
+  background: transparent;
+  border: 2px solid var(--brand-500);
+  color: var(--brand-500);
+  border-radius: 8px;
+  padding: 0.65rem 1.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.donor-evidence-btn:hover {
+  background: var(--brand-500);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .donor-counters {
+    gap: 1rem;
+  }
+  .sroi-layout {
+    grid-template-columns: 1fr;
+  }
+  .before-after-grid {
+    grid-template-columns: 1fr;
+  }
+  .methodology-layout {
+    flex-direction: column;
+  }
+}

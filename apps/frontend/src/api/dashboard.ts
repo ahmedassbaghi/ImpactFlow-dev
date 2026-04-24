@@ -112,3 +112,54 @@ export async function getDimensionVelocity(programId: string) {
   });
   return data;
 }
+
+export async function getSROI(programId: string, costEur: number, months: number) {
+  const { data } = await apiClient.get("/analytics/sroi", {
+    params: { program_id: programId, cost_eur: costEur, months },
+  });
+  return data as {
+    total_social_value_eur: number;
+    total_investment_eur: number;
+    sroi_ratio: number;
+    sroi_statement: string;
+    value_breakdown: Record<string, number>;
+    sensitivity_analysis: { conservative: number; central: number; optimistic: number };
+    methodology_reference: string;
+    deadweight_factor: number;
+    attribution_factor: number;
+    n_participants: number;
+    avg_ipi_gain: number;
+    program_duration_months: number;
+  };
+}
+
+export async function getInterRaterReliability(programId: string) {
+  const { data } = await apiClient.get("/analytics/inter-rater-reliability", {
+    params: { program_id: programId },
+  });
+  return data as {
+    overall_icc: number;
+    icc_by_dimension: Record<string, number>;
+    icc_interpretation: string;
+    n_raters: number;
+    n_observations: number;
+    bias_alerts: Array<{ rater_id: string; bias_type: string; dimension: string }>;
+  };
+}
+
+export async function getEvidenceExport(
+  programId: string,
+  periodStart?: string,
+  periodEnd?: string,
+  costEur?: number,
+) {
+  const { data } = await apiClient.get("/analytics/evidence-export", {
+    params: {
+      program_id: programId,
+      period_start: periodStart,
+      period_end: periodEnd,
+      cost_eur: costEur,
+    },
+  });
+  return data;
+}
