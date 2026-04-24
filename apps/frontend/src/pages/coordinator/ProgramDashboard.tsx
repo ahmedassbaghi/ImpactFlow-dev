@@ -27,9 +27,13 @@ import {
   getCostEffectiveness,
   getCoordinatorDashboard,
   getImpactStatement,
+  getInterventionEffect,
   getIpiDistribution,
   getSessionQuality,
 } from "../../api/dashboard";
+import { BootstrapCIBadge } from "../../components/analytics/BootstrapCIBadge";
+import { EffectSizeCard } from "../../components/analytics/EffectSizeCard";
+import { SignificanceIndicator } from "../../components/analytics/SignificanceIndicator";
 import { ReportInsightsModal } from "../../components/reports/ReportInsightsModal";
 import { listPrograms } from "../../api/programs";
 import { generateReport } from "../../api/reports";
@@ -144,6 +148,13 @@ export default function ProgramDashboardPage() {
   const { data: impactStatement } = useQuery({
     queryKey: ["impact-statement", selectedProgramId],
     queryFn: () => getImpactStatement(selectedProgramId),
+    enabled: !!selectedProgramId,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const { data: interventionEffect } = useQuery({
+    queryKey: ["intervention-effect", selectedProgramId, periodStart, periodEnd],
+    queryFn: () => getInterventionEffect(selectedProgramId, periodStart, periodEnd),
     enabled: !!selectedProgramId,
     placeholderData: (previousData) => previousData,
   });
@@ -375,6 +386,99 @@ export default function ProgramDashboardPage() {
           </p>
         )}
       </div>
+
+      {/* ── EVIDÈNCIA ESTADÍSTICA (Sprint 1 — Mòdul A) ─────────────────── */}
+      {interventionEffect && !interventionEffect.error && interventionEffect.n_participants > 0 && (
+        <div className="card">
+          <div className="page-header" style={{ marginBottom: "0.75rem" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Evidència Estadística de l'Impacte</h3>
+              <p className="muted" style={{ margin: "0.2rem 0 0" }}>
+                {interventionEffect.n_participants} participants · Baseline vs. última avaluació
+                {interventionEffect.has_control_group && " · Grup control inclòs"}
+              </p>
+            </div>
+            <span
+              className="chip"
+              style={{
+                background: interventionEffect.wilcoxon_significant ? "#ecfdf5" : "#fffbeb",
+                color: interventionEffect.wilcoxon_significant ? "#059669" : "#d97706",
+              }}
+            >
+              {interventionEffect.wilcoxon_significant ? "✓ Efecte Significatiu" : "⚠ Efecte No Significatiu"}
+            </span>
+          </div>
+
+          {/* Hero métricas */}
+          <div className="hero-metrics-grid">
+            <div className="hero-metric-card">
+              <div className="hero-metric-label">IPI Baseline → Final</div>
+              <div className="hero-metric-number" style={{ color: "#4f46e5" }}>
+                {interventionEffect.ipi_mean_final?.toFixed(1)}
+              </div>
+              <div className="hero-metric-sub neutral">
+                Baseline: {interventionEffect.ipi_mean_baseline?.toFixed(1)}
+              </div>
+            </div>
+            <div className="hero-metric-card">
+              <div className="hero-metric-label">Millora vs. Baseline</div>
+              <div
+                className="hero-metric-number"
+                style={{ color: (interventionEffect.ipi_change_percent ?? 0) >= 0 ? "#059669" : "#dc2626" }}
+              >
+                {(interventionEffect.ipi_change_percent ?? 0) >= 0 ? "+" : ""}
+                {interventionEffect.ipi_change_percent?.toFixed(1)}%
+              </div>
+              <div className="hero-metric-sub up">
+                +{interventionEffect.ipi_change_absolute?.toFixed(1)} pts IPI
+              </div>
+            </div>
+          </div>
+
+          {/* Cards estadísticas */}
+          <div className="stat-evidence-grid">
+            <EffectSizeCard d={interventionEffect.cohens_d} label={interventionEffect.cohens_d_label} />
+            <SignificanceIndicator
+              p={interventionEffect.wilcoxon_p}
+              significant={interventionEffect.wilcoxon_significant}
+            />
+            <BootstrapCIBadge
+              lower={interventionEffect.bootstrap_ci_95?.[0]}
+              upper={interventionEffect.bootstrap_ci_95?.[1]}
+            />
+            {interventionEffect.has_control_group && (
+              <div className="stat-evidence-card">
+                <div className="stat-evidence-label">Mann-Whitney U</div>
+                <div
+                  className="stat-evidence-value"
+                  style={{
+                    color: interventionEffect.mann_whitney_significant ? "#059669" : "#d97706",
+                    fontSize: "1.2rem",
+                  }}
+                >
+                  {interventionEffect.mann_whitney_p !== null && interventionEffect.mann_whitney_p !== undefined
+                    ? `p = ${interventionEffect.mann_whitney_p.toFixed(3)}`
+                    : "p = —"}
+                </div>
+                <span
+                  className="stat-evidence-badge"
+                  style={{
+                    color: interventionEffect.mann_whitney_significant ? "#059669" : "#d97706",
+                    background: interventionEffect.mann_whitney_significant ? "#ecfdf5" : "#fffbeb",
+                  }}
+                >
+                  {interventionEffect.mann_whitney_significant ? "✓ Grup control" : "⚠ Grup control"}
+                </span>
+                <div className="stat-evidence-hint">Intervenció vs. control</div>
+              </div>
+            )}
+          </div>
+
+          {interventionEffect.narrative && (
+            <p className="narrative-text">{interventionEffect.narrative}</p>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h3>

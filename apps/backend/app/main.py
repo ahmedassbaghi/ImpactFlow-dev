@@ -7,9 +7,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.algorithms.dropout_model import predict_dropout_probability
+from app.algorithms.effect_analysis import compute_intervention_effect
 from app.algorithms.ipi import DimensionScores, calculate_ipi, calculate_relative_improvement
-from app.algorithms.predictor import predict_next_ipi
+from app.algorithms.predictor import predict_ipi_with_uncertainty, predict_next_ipi, probability_of_reaching_target
 from app.algorithms.risk_engine import calculate_risk_score
+from app.algorithms.segmentation import cluster_participants, recommend_goals_for_cluster
+from app.analytics.cohort_analysis import (
+    compute_cohort_trajectories,
+    compute_retention_by_cohort,
+    dimension_velocity_analysis,
+)
 from app.config import get_settings
 from app.database import Base, engine, get_db
 from app.models import (
@@ -1130,3 +1138,272 @@ async def nlp_parse_note(
     current_user: User = Depends(require_roles("professional", "coordinator", "admin")),
 ):
     return await parse_qualitative_note(payload.note_text, payload.participant_context)
+
+
+# ============================================================
+# SPRINT 1 — Motor Analítico Avanzado
+# ============================================================
+
+@app.get(f"{settings.api_prefix}/analytics/intervention-effect")
+async def analytics_intervention_effect(
+    program_id: str,
+    period_start: date | None = None,
+    period_end: date | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Módulo A — Cohen's d, Wilcoxon, Bootstrap CI para el efecto del programa."""
+    baseline_q = await db.execute(
+        select(BaselineAssessment.participant_id, BaselineAssessment.ipi_baseline).where(
+            BaselineAssessment.program_id == program_id
+        )
+    )
+    baselines = {pid: float(ipi) for pid, ipi in baseline_q.all() if ipi is not None}
+    if not baselines:
+        return {"error": "no_baselines", "n_participants": 0}
+
+    filters = [PeriodicAssessment.program_id == program_id]
+    if period_start:
+        filters.append(PeriodicAssessment.assessment_date >= period_start)
+    if period_end:
+        filters.append(PeriodicAssessment.assessment_date <= period_end)
+
+    periodic_q = await db.execute(
+        select(
+            PeriodicAssessment.participant_id,
+            PeriodicAssessment.assessment_date,
+            PeriodicAssessment.ipi_score,
+        )
+        .where(*filters)
+        .order_by(PeriodicAssessment.participant_id, PeriodicAssessment.assessment_date.desc())
+    )
+
+    latest_by_participant: dict[str, float] = {}
+    for pid, _assessed_at, ipi_score in periodic_q.all():
+        if pid not in latest_by_participant:
+            latest_by_participant[pid] = float(ipi_score)
+
+    if not latest_by_participant:
+        return {"error": "no_assessments_in_period", "n_participants": 0}
+
+    ctrl_q = await db.execute(
+        select(Participant.id, Participant.is_control_group).where(
+            Participant.id.in_(list(latest_by_participant.keys()))
+        )
+    )
+    is_control = {pid: ctrl for pid, ctrl in ctrl_q.all()}
+
+    baseline_ipis: list[float] = []
+    final_ipis: list[float] = []
+    control_ipis: list[float] = []
+
+    for pid, final_ipi in latest_by_participant.items():
+        if pid not in baselines:
+            continue
+        if is_control.get(pid, False):
+            control_ipis.append(final_ipi)
+        else:
+            baseline_ipis.append(baselines[pid])
+            final_ipis.append(final_ipi)
+
+    return compute_intervention_effect(
+        baseline_ipis=baseline_ipis,
+        final_ipis=final_ipis,
+        control_ipis=control_ipis if control_ipis else None,
+    )
+
+
+@app.get(f"{settings.api_prefix}/participants/{{participant_id}}/prediction-probabilistic")
+async def participant_prediction_probabilistic(
+    participant_id: str,
+    weeks_ahead: int = 12,
+    target_ipi: float = 70.0,
+    confidence: float = 0.80,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Módulo B.1+B.2 — Predicción IPI con IC bootstrapped + probabilidad de alcanzar objetivo."""
+    history_q = await db.execute(
+        select(PeriodicAssessment.ipi_score, PeriodicAssessment.assessment_date)
+        .where(PeriodicAssessment.participant_id == participant_id)
+        .order_by(PeriodicAssessment.assessment_date)
+    )
+    rows = history_q.all()
+    historical_ipis = [float(r[0]) for r in rows]
+    historical_dates = [r[1] for r in rows]
+
+    prediction = predict_ipi_with_uncertainty(
+        historical_ipis, historical_dates, weeks_ahead=weeks_ahead, confidence=confidence
+    )
+    prob = probability_of_reaching_target(historical_ipis, target_ipi=target_ipi, weeks_ahead=weeks_ahead)
+
+    return {**prediction, **prob}
+
+
+@app.get(f"{settings.api_prefix}/analytics/dropout-probability/{{participant_id}}")
+async def analytics_dropout_probability(
+    participant_id: str,
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Módulo B.3 — Probabilidad de abandono del programa a 30 y 60 días."""
+    participant_q = await db.execute(select(Participant).where(Participant.id == participant_id))
+    participant = participant_q.scalar_one_or_none()
+    if not participant:
+        raise HTTPException(status_code=404, detail="Participant not found")
+
+    feature_bundle = await build_participant_feature_bundle(
+        db=db,
+        participant_id=participant_id,
+        program_id=program_id,
+        reference_date=date.today(),
+    )
+
+    last_assess_q = await db.execute(
+        select(PeriodicAssessment)
+        .where(
+            PeriodicAssessment.participant_id == participant_id,
+            PeriodicAssessment.program_id == program_id,
+        )
+        .order_by(PeriodicAssessment.assessment_date.desc())
+        .limit(1)
+    )
+    last_assess = last_assess_q.scalar_one_or_none()
+
+    feature_bundle["ipi_delta_last_period"] = last_assess.ipi_delta_vs_previous if last_assess else None
+    feature_bundle["weeks_in_program"] = max(1, (date.today() - participant.enrollment_date).days // 7)
+
+    return predict_dropout_probability(feature_bundle)
+
+
+# ============================================================
+# SPRINT 2 — Segmentació K-Means i Anàlisi de Cohortes
+# ============================================================
+
+@app.get(f"{settings.api_prefix}/analytics/participant-segments")
+async def analytics_participant_segments(
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Módulo C — K-Means clustering dels participants.
+    Agrupa per les 4 dimensions del IPI en baseline i retorna perfils semàntics.
+    """
+    baseline_q = await db.execute(
+        select(
+            BaselineAssessment.participant_id,
+            BaselineAssessment.reading_level,
+            BaselineAssessment.math_level,
+            BaselineAssessment.comprehension_level,
+            BaselineAssessment.attention_level,
+            BaselineAssessment.memory_level,
+            BaselineAssessment.autonomy_level,
+            BaselineAssessment.peer_interaction,
+            BaselineAssessment.group_work,
+            BaselineAssessment.emotional_regulation,
+            BaselineAssessment.language_fluency,
+            BaselineAssessment.cultural_adaptation,
+        ).where(BaselineAssessment.program_id == program_id)
+    )
+
+    def _dim_avg(vals: list) -> float | None:
+        valid = [float(v) for v in vals if v is not None]
+        if not valid:
+            return None
+        return (sum(valid) / len(valid) - 1) / 4 * 100
+
+    participants_data = []
+    for row in baseline_q.all():
+        pid = row[0]
+        academic = _dim_avg([row[1], row[2], row[3]])
+        cognitive = _dim_avg([row[4], row[5], row[6]])
+        social = _dim_avg([row[7], row[8], row[9]])
+        integration = _dim_avg([row[10], row[11]])
+        if any(v is not None for v in [academic, cognitive, social, integration]):
+            participants_data.append({
+                "participant_id": pid,
+                "academic": academic or 0.0,
+                "cognitive": cognitive or 0.0,
+                "social": social or 0.0,
+                "integration": integration or 0.0,
+            })
+
+    if not participants_data:
+        return {"error": "no_baseline_data", "n": 0}
+
+    return cluster_participants(participants_data, n_clusters=5)
+
+
+@app.get(f"{settings.api_prefix}/participants/{{participant_id}}/profile-cluster")
+async def participant_profile_cluster(
+    participant_id: str,
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retorna el perfil K-Means del participant + micro-goals recomanats."""
+    baseline_q = await db.execute(
+        select(BaselineAssessment).where(
+            BaselineAssessment.participant_id == participant_id,
+            BaselineAssessment.program_id == program_id,
+        )
+    )
+    baseline = baseline_q.scalar_one_or_none()
+    if not baseline:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+
+    def _dim_avg(vals: list) -> float:
+        valid = [float(v) for v in vals if v is not None]
+        return (sum(valid) / len(valid) - 1) / 4 * 100 if valid else 0.0
+
+    single = [{
+        "participant_id": participant_id,
+        "academic": _dim_avg([baseline.reading_level, baseline.math_level, baseline.comprehension_level]),
+        "cognitive": _dim_avg([baseline.attention_level, baseline.memory_level, baseline.autonomy_level]),
+        "social": _dim_avg([baseline.peer_interaction, baseline.group_work, baseline.emotional_regulation]),
+        "integration": _dim_avg([baseline.language_fluency, baseline.cultural_adaptation]),
+    }]
+
+    result = cluster_participants(single, n_clusters=1)
+    cluster_label = result["clusters"][0]["label"] if result["clusters"] else "En Construcció"
+
+    return {
+        "participant_id": participant_id,
+        "cluster_label": cluster_label,
+        "cluster_description": result["clusters"][0]["description"] if result["clusters"] else "",
+        "strategy": result["clusters"][0]["strategy"] if result["clusters"] else "",
+        "recommended_goals": recommend_goals_for_cluster(cluster_label),
+        "dimensions": single[0],
+    }
+
+
+@app.get(f"{settings.api_prefix}/analytics/cohort-trajectories")
+async def analytics_cohort_trajectories(
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Módulo D — Evolució IPI per cohorte trimestral (0, 3, 6, 9, 12 mesos)."""
+    return await compute_cohort_trajectories(program_id, db)
+
+
+@app.get(f"{settings.api_prefix}/analytics/cohort-retention")
+async def analytics_cohort_retention(
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Módulo D — Retención per cohorte (estil Kaplan-Meier simplificat)."""
+    return await compute_retention_by_cohort(program_id, db)
+
+
+@app.get(f"{settings.api_prefix}/analytics/dimension-velocity")
+async def analytics_dimension_velocity(
+    program_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Módulo D — Velocitat de millora per dimensió i fase del programa."""
+    return await dimension_velocity_analysis(program_id, db)

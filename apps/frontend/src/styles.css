@@ -2,6 +2,43 @@
   font-family: Inter, system-ui, sans-serif;
   color: #111827;
   background: #f3f4f6;
+
+  /* BRAND */
+  --brand-900: #1e1b4b;
+  --brand-700: #3730a3;
+  --brand-500: #4f46e5;
+  --brand-300: #a5b4fc;
+  --brand-100: #e0e7ff;
+
+  /* SEMANTIC — Risk */
+  --risk-high: #dc2626;
+  --risk-high-bg: #fef2f2;
+  --risk-medium: #d97706;
+  --risk-medium-bg: #fffbeb;
+  --risk-low: #059669;
+  --risk-low-bg: #ecfdf5;
+
+  /* SEMANTIC — Dimensions */
+  --dim-academic: #3b82f6;
+  --dim-cognitive: #8b5cf6;
+  --dim-social: #10b981;
+  --dim-integration: #f59e0b;
+
+  /* SEMANTIC — Trend */
+  --trend-up: #059669;
+  --trend-stable: #6b7280;
+  --trend-down: #dc2626;
+
+  /* NEUTRAL */
+  --surface-0: #ffffff;
+  --surface-1: #f8fafc;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
 }
 
 html,
@@ -719,6 +756,124 @@ button.btn-secondary {
   opacity: 1;
   visibility: visible;
 }
+
+/* ============================================================
+   STATISTICAL EVIDENCE COMPONENTS (Sprint 1)
+   ============================================================ */
+
+.stat-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.stat-evidence-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.stat-evidence-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.stat-evidence-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-evidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.stat-evidence-hint {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+.narrative-text {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border-left: 3px solid var(--brand-500);
+  background: var(--brand-100);
+  color: var(--brand-700);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+/* Hero métricas (4 columnas grandes) */
+.hero-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.hero-metric-card {
+  padding: 1.1rem 1.2rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-0);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hero-metric-number {
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-metric-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.hero-metric-sub {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 0.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.hero-metric-sub.up   { color: var(--trend-up); }
+.hero-metric-sub.down { color: var(--trend-down); }
+.hero-metric-sub.neutral { color: var(--text-secondary); }
+
+/* Insignia de significancia estadística */
+.sig-check { color: var(--risk-low); font-weight: 800; }
+.sig-warn  { color: var(--risk-medium); font-weight: 800; }
 
 @media (max-width: 980px) {
   .app-shell {

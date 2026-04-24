@@ -7,6 +7,7 @@ import ProgramDashboardPage from "./pages/coordinator/ProgramDashboard";
 import ReportsPage from "./pages/coordinator/ReportsPage";
 import MicroGoalsPage from "./pages/coordinator/MicroGoalsPage";
 import ParticipantsPage from "./pages/coordinator/ParticipantsPage";
+import ParticipantProfile from "./pages/coordinator/ParticipantProfile";
 import PlansPage from "./pages/coordinator/PlansPage";
 import UsersRolesPage from "./pages/coordinator/UsersRolesPage";
 import ImpactPortalPage from "./pages/donor/ImpactPortal";
@@ -107,6 +108,16 @@ export default function App() {
           <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
             <AppShell>
               <ParticipantsPage />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/participants/:participantId"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
+            <AppShell>
+              <ParticipantProfile />
             </AppShell>
           </ProtectedRoute>
         }

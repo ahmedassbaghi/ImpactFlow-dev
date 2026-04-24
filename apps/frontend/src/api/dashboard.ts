@@ -79,3 +79,36 @@ export async function getDonorDashboard(orgSlug: string) {
   const { data } = await apiClient.get(`/dashboard/donor/${orgSlug}`);
   return data;
 }
+
+
+export async function getInterventionEffect(
+  programId: string,
+  periodStart?: string,
+  periodEnd?: string
+) {
+  const { data } = await apiClient.get("/analytics/intervention-effect", {
+    params: { program_id: programId, period_start: periodStart, period_end: periodEnd },
+  });
+  return data;
+}
+
+export async function getCohortTrajectories(programId: string) {
+  const { data } = await apiClient.get("/analytics/cohort-trajectories", {
+    params: { program_id: programId },
+  });
+  return data;
+}
+
+export async function getCohortRetention(programId: string) {
+  const { data } = await apiClient.get("/analytics/cohort-retention", {
+    params: { program_id: programId },
+  });
+  return data;
+}
+
+export async function getDimensionVelocity(programId: string) {
+  const { data } = await apiClient.get("/analytics/dimension-velocity", {
+    params: { program_id: programId },
+  });
+  return data;
+}
