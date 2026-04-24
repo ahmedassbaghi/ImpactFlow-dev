@@ -791,16 +791,23 @@ async def donor_dashboard(
 
     baseline_by_dim = {d: _avg(v) for d, v in baseline_dims.items()}
 
-    # Latest IPI per participant
+    # Latest IPI per participant + dimension scores from raw assessment fields
     if pid:
         latest_q = await db.execute(
             select(
                 PeriodicAssessment.participant_id,
                 PeriodicAssessment.ipi_score,
-                PeriodicAssessment.academic_score,
-                PeriodicAssessment.cognitive_score,
-                PeriodicAssessment.social_score,
-                PeriodicAssessment.integration_score,
+                PeriodicAssessment.reading_level,
+                PeriodicAssessment.math_level,
+                PeriodicAssessment.comprehension_level,
+                PeriodicAssessment.attention_level,
+                PeriodicAssessment.memory_level,
+                PeriodicAssessment.autonomy_level,
+                PeriodicAssessment.peer_interaction,
+                PeriodicAssessment.group_work,
+                PeriodicAssessment.emotional_regulation,
+                PeriodicAssessment.language_fluency,
+                PeriodicAssessment.cultural_adaptation,
             )
             .where(PeriodicAssessment.program_id == pid)
             .order_by(PeriodicAssessment.assessment_date.desc())
@@ -815,13 +822,16 @@ async def donor_dashboard(
     else:
         latest_assessments = []
 
+    def _pa_dim(r: Any, fields: list[str]) -> float:
+        return _dim_avg([getattr(r, f, None) for f in fields])
+
     current_dims = {
-        "academic": _avg([r.academic_score for r in latest_assessments if r.academic_score]),
-        "cognitive": _avg([r.cognitive_score for r in latest_assessments if r.cognitive_score]),
-        "social": _avg([r.social_score for r in latest_assessments if r.social_score]),
-        "integration": _avg([r.integration_score for r in latest_assessments if r.integration_score]),
+        "academic": _avg([_pa_dim(r, ["reading_level", "math_level", "comprehension_level"]) for r in latest_assessments]),
+        "cognitive": _avg([_pa_dim(r, ["attention_level", "memory_level", "autonomy_level"]) for r in latest_assessments]),
+        "social": _avg([_pa_dim(r, ["peer_interaction", "group_work", "emotional_regulation"]) for r in latest_assessments]),
+        "integration": _avg([_pa_dim(r, ["language_fluency", "cultural_adaptation"]) for r in latest_assessments]),
     }
-    current_ipi = _avg([r.ipi_score for r in latest_assessments if r.ipi_score])
+    current_ipi = _avg([float(r.ipi_score) for r in latest_assessments if r.ipi_score])
 
     avg_ipi_gain = round(current_ipi - _avg(list(baseline_by_dim.values())), 1)
     avg_ipi_gain_pct = round((avg_ipi_gain / 100) * 100, 1) if avg_ipi_gain > 0 else 0.0
