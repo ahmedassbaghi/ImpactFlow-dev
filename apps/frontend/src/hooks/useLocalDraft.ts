@@ -20,5 +20,5 @@ export function useLocalDraft<T>(key: string, initialValue: T) {
     setValue(initialValue);
   };
 
-  return { value, setValue, clear };
+  return [value, setValue, clear] as const;
 }

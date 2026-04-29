@@ -42,10 +42,21 @@ class ParticipantOut(BaseModel):
         from_attributes = True
 
 
+class ProgramCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    program_type: str = "other"
+    start_date: date
+    end_date: Optional[date] = None
+
+
 class ProgramOut(BaseModel):
     id: str
     name: str
+    description: Optional[str]
     program_type: str
+    start_date: date
+    end_date: Optional[date]
     active: bool
 
     class Config:
@@ -106,6 +117,20 @@ class SessionOut(BaseModel):
     notes: Optional[str]
     notes_ai_summary: Optional[str]
     notes_sentiment: Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class SessionObservationOut(BaseModel):
+    id: str
+    participant_id: str
+    academic_score: Optional[int]
+    cognitive_score: Optional[int]
+    social_score: Optional[int]
+    integration_score: Optional[int]
+    qualitative_note: Optional[str]
+    mood_indicator: Optional[str]
 
     class Config:
         from_attributes = True

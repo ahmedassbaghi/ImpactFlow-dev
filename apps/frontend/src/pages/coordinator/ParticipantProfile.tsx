@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
@@ -17,14 +17,25 @@ import {
   PolarRadiusAxis,
 } from "recharts";
 import {
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Lightbulb,
+  AlertTriangle,
+  CheckCircle2,
+  Star,
+} from "lucide-react";
+import {
   getParticipantEvolution,
   getParticipantRisk,
   getParticipantPredictionProbabilistic,
   getDropoutProbability,
   getParticipantCluster,
+  createBaseline,
 } from "../../api/participants";
+import { listPrograms } from "../../api/programs";
 
-const TABS = ["Evolució", "Predicció", "Anàlisi", "Alertes"] as const;
+const TABS = ["Baseline", "Evolució", "Predicció", "Anàlisi", "Alertes"] as const;
 type Tab = (typeof TABS)[number];
 
 const RISK_COLOR: Record<string, string> = {
@@ -47,10 +58,6 @@ const DIM_LABELS: Record<string, string> = {
   integration: "Integració",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-components
-// ─────────────────────────────────────────────────────────────────────────────
-
 function RiskBadge({ level }: { level: string }) {
   const labels: Record<string, string> = { low: "Risc Baix", medium: "Risc Mitjà", high: "Risc Alt" };
   return (
@@ -70,9 +77,9 @@ function RiskBadge({ level }: { level: string }) {
 }
 
 function TrendArrow({ trend }: { trend?: string }) {
-  if (trend === "improving") return <span style={{ color: "var(--trend-up)" }}>↑</span>;
-  if (trend === "declining") return <span style={{ color: "var(--trend-down)" }}>↓</span>;
-  return <span style={{ color: "var(--trend-stable)" }}>→</span>;
+  if (trend === "improving") return <TrendingUp size={14} style={{ color: "var(--trend-up)", display: "inline" }} />;
+  if (trend === "declining") return <TrendingDown size={14} style={{ color: "var(--trend-down)", display: "inline" }} />;
+  return <Minus size={14} style={{ color: "var(--trend-stable)", display: "inline" }} />;
 }
 
 function ProbabilityBar({ value, color = "var(--brand-500)" }: { value: number; color?: string }) {
@@ -104,22 +111,277 @@ function ProbabilityBar({ value, color = "var(--brand-500)" }: { value: number; 
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main component
-// ─────────────────────────────────────────────────────────────────────────────
+function StarRating({ count }: { count: number }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 1 }}>
+      {[1, 2, 3].map((i) => (
+        <Star
+          key={i}
+          size={12}
+          style={{
+            fill: i <= count ? "currentColor" : "none",
+            color: "var(--text-muted)",
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+const BASELINE_DIMENSIONS = [
+  {
+    group: "Acadèmic",
+    colorVar: "var(--dim-academic)",
+    fields: [
+      { key: "reading_level", label: "Lectura" },
+      { key: "math_level", label: "Matemàtiques" },
+      { key: "comprehension_level", label: "Comprensió" },
+    ],
+  },
+  {
+    group: "Cognitiu",
+    colorVar: "var(--dim-cognitive)",
+    fields: [
+      { key: "attention_level", label: "Atenció" },
+      { key: "memory_level", label: "Memòria" },
+      { key: "autonomy_level", label: "Autonomia" },
+    ],
+  },
+  {
+    group: "Social",
+    colorVar: "var(--dim-social)",
+    fields: [
+      { key: "peer_interaction", label: "Relació amb iguals" },
+      { key: "group_work", label: "Treball en grup" },
+      { key: "emotional_regulation", label: "Regulació emocional" },
+    ],
+  },
+  {
+    group: "Integració",
+    colorVar: "var(--dim-integration)",
+    fields: [
+      { key: "language_fluency", label: "Fluïdesa lingüística" },
+      { key: "cultural_adaptation", label: "Adaptació cultural" },
+    ],
+  },
+];
+
+type SliderValues = Record<string, number>;
+
+function BaselineForm({ participantId }: { participantId: string }) {
+  const queryClient = useQueryClient();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [programId, setProgramId] = useState("");
+  const [assessmentDate, setAssessmentDate] = useState(today);
+  const [notes, setNotes] = useState("");
+  const [sliders, setSliders] = useState<SliderValues>(() => {
+    const init: SliderValues = {};
+    for (const group of BASELINE_DIMENSIONS) {
+      for (const f of group.fields) {
+        init[f.key] = 3;
+      }
+    }
+    return init;
+  });
+  const [successMsg, setSuccessMsg] = useState("");
+
+  const programsQ = useQuery({
+    queryKey: ["programs", true],
+    queryFn: () => listPrograms(true),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => createBaseline(participantId, payload as never),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["participant-evolution", participantId] });
+      setSuccessMsg("Baseline creat correctament.");
+    },
+  });
+
+  function handleSubmit() {
+    const payload: Record<string, unknown> = {
+      participant_id: participantId,
+      program_id: programId,
+      assessment_date: assessmentDate,
+      notes,
+      ...sliders,
+    };
+    mutation.mutate(payload);
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: 640, margin: "0 auto", padding: "1.5rem", borderRadius: 14 }}>
+      <h3 style={{ margin: "0 0 1.25rem", fontSize: "1rem", fontWeight: 800 }}>Crear Baseline</h3>
+
+      <div style={{ marginBottom: "1rem" }}>
+        <div className="form-label">Programa</div>
+        <select
+          className="form-select"
+          value={programId}
+          onChange={(e) => setProgramId(e.target.value)}
+        >
+          <option value="">Selecciona un programa</option>
+          {(programsQ.data ?? []).map((p: { id: string; name: string }) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: "1.25rem" }}>
+        <div className="form-label">Data d'avaluació</div>
+        <input
+          type="date"
+          className="form-input"
+          value={assessmentDate}
+          onChange={(e) => setAssessmentDate(e.target.value)}
+        />
+      </div>
+
+      {BASELINE_DIMENSIONS.map((group) => (
+        <div key={group.group} style={{ marginBottom: "1.25rem" }}>
+          <div style={{ fontWeight: 700, fontSize: "0.88rem", color: group.colorVar, marginBottom: "0.6rem" }}>
+            {group.group}
+          </div>
+          {group.fields.map((f) => (
+            <div
+              key={f.key}
+              style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}
+            >
+              <span style={{ minWidth: 130, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{f.label}</span>
+              <input
+                type="range"
+                min={1}
+                max={5}
+                step={1}
+                value={sliders[f.key]}
+                onChange={(e) => setSliders((prev) => ({ ...prev, [f.key]: Number(e.target.value) }))}
+                style={{ flex: 1, accentColor: group.colorVar }}
+              />
+              <span style={{ minWidth: 20, textAlign: "right", fontWeight: 700, fontSize: "0.88rem", color: "var(--text-primary)" }}>
+                {sliders[f.key]}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div style={{ marginBottom: "1.25rem" }}>
+        <div className="form-label">Notes</div>
+        <textarea
+          className="form-textarea"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+        />
+      </div>
+
+      {mutation.isError && (
+        <div style={{ color: "var(--risk-high)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+          Error en crear el baseline. Torna-ho a intentar.
+        </div>
+      )}
+
+      {successMsg && (
+        <div style={{ color: "var(--risk-low)", fontSize: "0.85rem", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 6 }}>
+          <CheckCircle2 size={14} />
+          {successMsg}
+        </div>
+      )}
+
+      <button
+        className="btn-primary"
+        onClick={handleSubmit}
+        disabled={mutation.isPending || !programId}
+      >
+        {mutation.isPending ? "Creant..." : "Crear baseline"}
+      </button>
+    </div>
+  );
+}
+
+function BaselineReadOnly({ evolution }: { evolution: Record<string, unknown> }) {
+  const baselineIpi = evolution.baseline_ipi as number | null;
+  const dimBaseline = (evolution.dimensions_baseline ?? {}) as Record<string, number>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div
+        style={{
+          background: "var(--surface-0)",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          padding: "1.25rem",
+        }}
+      >
+        <h3 style={{ margin: "0 0 0.75rem", fontSize: "0.95rem", fontWeight: 700 }}>Baseline IPI</h3>
+        <div style={{ fontSize: "2.4rem", fontWeight: 800, color: "var(--brand-500)", lineHeight: 1 }}>
+          {baselineIpi != null ? baselineIpi.toFixed(1) : "—"}
+        </div>
+      </div>
+
+      {Object.keys(dimBaseline).length > 0 && (
+        <div
+          style={{
+            background: "var(--surface-0)",
+            border: "1px solid var(--border)",
+            borderRadius: 14,
+            padding: "1.25rem",
+          }}
+        >
+          <h3 style={{ margin: "0 0 0.75rem", fontSize: "0.95rem", fontWeight: 700 }}>Dimensions Baseline</h3>
+          {BASELINE_DIMENSIONS.map((group) => (
+            <div key={group.group} style={{ marginBottom: "1rem" }}>
+              <div style={{ fontWeight: 700, fontSize: "0.85rem", color: group.colorVar, marginBottom: "0.4rem" }}>
+                {group.group}
+              </div>
+              {group.fields.map((f) => {
+                const val = dimBaseline[f.key];
+                return (
+                  <div
+                    key={f.key}
+                    style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.4rem" }}
+                  >
+                    <span style={{ minWidth: 160, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{f.label}</span>
+                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--surface-3)" }}>
+                      <div
+                        style={{
+                          height: "100%",
+                          width: val != null ? `${((val - 1) / 4) * 100}%` : "0%",
+                          borderRadius: 3,
+                          background: group.colorVar,
+                        }}
+                      />
+                    </div>
+                    <span style={{ minWidth: 20, textAlign: "right", fontWeight: 700, fontSize: "0.85rem" }}>
+                      {val != null ? val : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ParticipantProfile() {
   const { participantId } = useParams<{ participantId: string }>();
   const [searchParams] = useSearchParams();
   const programId = searchParams.get("program_id") ?? "";
 
-  const [activeTab, setActiveTab] = useState<Tab>("Evolució");
-
   const evolutionQ = useQuery({
     queryKey: ["participant-evolution", participantId],
     queryFn: () => getParticipantEvolution(participantId!),
     enabled: !!participantId,
   });
+
+  const evolution = evolutionQ.data;
+  const hasBaseline = evolutionQ.data !== null && evolution?.baseline_ipi != null;
+
+  const [activeTab, setActiveTab] = useState<Tab>(hasBaseline ? "Evolució" : "Baseline");
 
   const riskQ = useQuery({
     queryKey: ["participant-risk", participantId, programId],
@@ -145,7 +407,6 @@ export default function ParticipantProfile() {
     enabled: !!participantId && !!programId,
   });
 
-  const evolution = evolutionQ.data;
   const risk = riskQ.data;
   const pred = predQ.data;
   const dropout = dropoutQ.data;
@@ -156,7 +417,6 @@ export default function ParticipantProfile() {
   const delta = currentIpi != null && baseline != null ? currentIpi - baseline : null;
   const deltaPct = baseline && delta != null ? (delta / baseline) * 100 : null;
 
-  // Build chart data from history
   const chartData: { label: string; ipi: number | null; predicted?: number }[] = [];
   if (evolution?.history) {
     for (const point of evolution.history) {
@@ -167,7 +427,6 @@ export default function ParticipantProfile() {
     chartData.push({ label: "Predicció", ipi: null, predicted: pred.predicted_ipi });
   }
 
-  // Radar data
   const dims = ["academic", "cognitive", "social", "integration"];
   const radarData = dims.map((d) => ({
     dimension: DIM_LABELS[d],
@@ -181,7 +440,6 @@ export default function ParticipantProfile() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: "1.5rem" }}>
-      {/* ── HEADER ──────────────────────────────────────────────────────────── */}
       <div
         style={{
           background: "var(--surface-0)",
@@ -193,7 +451,6 @@ export default function ParticipantProfile() {
           gap: "1rem",
         }}
       >
-        {/* Avatar */}
         <div
           style={{
             width: 52,
@@ -272,7 +529,6 @@ export default function ParticipantProfile() {
         </div>
       </div>
 
-      {/* ── TABS ─────────────────────────────────────────────────────────────── */}
       <div
         style={{
           display: "flex",
@@ -303,10 +559,18 @@ export default function ParticipantProfile() {
         ))}
       </div>
 
-      {/* ── TAB: EVOLUCIÓ ───────────────────────────────────────────────────── */}
+      {activeTab === "Baseline" && (
+        <div>
+          {!hasBaseline ? (
+            <BaselineForm participantId={participantId} />
+          ) : (
+            <BaselineReadOnly evolution={evolution as Record<string, unknown>} />
+          )}
+        </div>
+      )}
+
       {activeTab === "Evolució" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* IPI Evolution chart */}
           <div
             style={{
               background: "var(--surface-0)",
@@ -368,7 +632,6 @@ export default function ParticipantProfile() {
             )}
           </div>
 
-          {/* Radar + Dimension breakdown */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <div
               style={{
@@ -443,10 +706,8 @@ export default function ParticipantProfile() {
         </div>
       )}
 
-      {/* ── TAB: PREDICCIÓ ──────────────────────────────────────────────────── */}
       {activeTab === "Predicció" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          {/* IPI Prediction card */}
           <div
             style={{
               background: "var(--surface-0)",
@@ -507,7 +768,6 @@ export default function ParticipantProfile() {
             )}
           </div>
 
-          {/* Target probability + dropout */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             {pred && (
               <div
@@ -571,9 +831,13 @@ export default function ParticipantProfile() {
                       fontSize: "0.82rem",
                       fontWeight: 600,
                       color: "var(--risk-medium)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                     }}
                   >
-                    💡 {dropout.recommended_intervention}
+                    <Lightbulb size={14} />
+                    {dropout.recommended_intervention}
                   </div>
                 )}
               </div>
@@ -582,7 +846,6 @@ export default function ParticipantProfile() {
         </div>
       )}
 
-      {/* ── TAB: ANÀLISI (K-Means cluster) ──────────────────────────────────── */}
       {activeTab === "Anàlisi" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {clusterQ.isLoading ? (
@@ -671,9 +934,12 @@ export default function ParticipantProfile() {
                             fontWeight: 700,
                             color: "var(--text-muted)",
                             textTransform: "uppercase",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
                           }}
                         >
-                          {DIM_LABELS[g.dimension]} · {"★".repeat(g.difficulty)}
+                          {DIM_LABELS[g.dimension]} · <StarRating count={g.difficulty} />
                         </span>
                       </div>
                     ))}
@@ -689,7 +955,6 @@ export default function ParticipantProfile() {
         </div>
       )}
 
-      {/* ── TAB: ALERTES ────────────────────────────────────────────────────── */}
       {activeTab === "Alertes" && (
         <div
           style={{
@@ -716,16 +981,21 @@ export default function ParticipantProfile() {
                       fontSize: "0.85rem",
                       fontWeight: 600,
                       color: "var(--risk-high)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                     }}
                   >
-                    ⚠ {f.replace(/_/g, " ")}
+                    <AlertTriangle size={14} />
+                    {f.replace(/_/g, " ")}
                   </div>
                 ))}
               </div>
             </>
           ) : (
-            <div style={{ color: "var(--risk-low)", fontWeight: 600, fontSize: "0.9rem" }}>
-              ✓ Cap factor de risc significatiu detectat.
+            <div style={{ color: "var(--risk-low)", fontWeight: 600, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: 6 }}>
+              <CheckCircle2 size={14} />
+              Cap factor de risc significatiu detectat.
             </div>
           )}
         </div>

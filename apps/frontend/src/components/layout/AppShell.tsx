@@ -1,18 +1,29 @@
 import {
+  Atom,
   BarChart3,
   BookOpen,
-  ChevronRight,
+  Command,
   FileText,
+  FolderKanban,
   Heart,
+  History,
   LayoutDashboard,
   LogOut,
+  Moon,
+  Settings,
+  Sun,
   Target,
   Users,
   Zap,
-  Settings,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
+import { useThemeStore } from "../../stores/themeStore";
+import { QuickLoggerFAB } from "../sessions/QuickLoggerFAB";
+import { CommandPalette } from "../common/CommandPalette";
+import { NotificationBell } from "../common/NotificationBell";
+import { PageTransition } from "../common/PageTransition";
+import { avatarStyle, avatarInitial } from "../../utils/hueAvatar";
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   admin:        { label: "Admin",        color: "#7c3aed", bg: "#ede9fe" },
@@ -24,26 +35,33 @@ const ROLE_META: Record<string, { label: string; color: string; bg: string }> = 
 
 const NAV_LINKS: Record<string, { to: string; label: string; icon: React.ElementType }[]> = {
   professional: [
-    { to: "/professional/session-logger", label: "Registre de sessió",  icon: Zap },
-    { to: "/coordinator/participants",    label: "Participants",         icon: Users },
-    { to: "/coordinator/micro-goals",     label: "Micro-objectius",      icon: Target },
+    { to: "/professional/session-logger", label: "Registre",         icon: Zap },
+    { to: "/coordinator/sessions",        label: "Historial",        icon: History },
+    { to: "/coordinator/participants",    label: "Participants",      icon: Users },
+    { to: "/coordinator/micro-goals",    label: "Micro-objectius",   icon: Target },
   ],
   coordinator: [
-    { to: "/coordinator/dashboard",   label: "Dashboard",           icon: LayoutDashboard },
-    { to: "/coordinator/participants",label: "Participants",         icon: Users },
-    { to: "/coordinator/micro-goals", label: "Micro-objectius",     icon: Target },
-    { to: "/coordinator/reports",     label: "Informes",            icon: FileText },
-    { to: "/coordinator/users",       label: "Usuaris i rols",      icon: Settings },
-    { to: "/professional/session-logger", label: "Registre ràpid", icon: Zap },
+    { to: "/coordinator/dashboard",          label: "Dashboard",          icon: LayoutDashboard },
+    { to: "/coordinator/participants",       label: "Participants",        icon: Users },
+    { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
+    { to: "/coordinator/sessions",          label: "Historial",           icon: History },
+    { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
+    { to: "/professional/session-logger",    label: "Registre",            icon: Zap },
+    { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
+    { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
+    { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
   ],
   admin: [
-    { to: "/coordinator/dashboard",   label: "Dashboard",           icon: LayoutDashboard },
-    { to: "/coordinator/participants",label: "Participants",         icon: Users },
-    { to: "/coordinator/micro-goals", label: "Micro-objectius",     icon: Target },
-    { to: "/coordinator/reports",     label: "Informes",            icon: FileText },
-    { to: "/coordinator/users",       label: "Usuaris i rols",      icon: Settings },
-    { to: "/professional/session-logger", label: "Registre ràpid", icon: Zap },
-    { to: "/admin/control-center",    label: "Control d'admin",     icon: BookOpen },
+    { to: "/coordinator/dashboard",          label: "Dashboard",          icon: LayoutDashboard },
+    { to: "/coordinator/participants",       label: "Participants",        icon: Users },
+    { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
+    { to: "/coordinator/sessions",          label: "Historial",           icon: History },
+    { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
+    { to: "/professional/session-logger",    label: "Registre",            icon: Zap },
+    { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
+    { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
+    { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
+    { to: "/admin/control-center",           label: "Admin",               icon: BookOpen },
   ],
   donor: [
     { to: "/donor/impact-portal", label: "Portal d'impacte", icon: Heart },
@@ -53,128 +71,114 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
   ],
 };
 
-const PRIMARY_ACTION: Record<string, { to: string; label: string }> = {
-  professional: { to: "/professional/session-logger", label: "Registrar sessió" },
-  coordinator:  { to: "/professional/session-logger", label: "Registrar sessió" },
-  admin:        { to: "/professional/session-logger", label: "Registrar sessió" },
-  donor:        { to: "/donor/impact-portal",         label: "Veure impacte" },
-  viewer:       { to: "/donor/impact-portal",         label: "Veure impacte" },
-};
-
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const role    = useAuthStore((s) => s.role) ?? "viewer";
-  const userId  = useAuthStore((s) => s.userId);
-  const clear   = useAuthStore((s) => s.clear);
-  const navigate   = useNavigate();
-  const location   = useLocation();
+  const role   = useAuthStore((s) => s.role)   ?? "viewer";
+  const userId = useAuthStore((s) => s.userId);
+  const clear  = useAuthStore((s) => s.clear);
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const theme  = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggle);
 
   const logout = () => { clear(); navigate("/login"); };
 
-  const links       = NAV_LINKS[role]      ?? NAV_LINKS.viewer;
-  const primary     = PRIMARY_ACTION[role] ?? PRIMARY_ACTION.viewer;
-  const roleMeta    = ROLE_META[role]      ?? ROLE_META.viewer;
-
-  // Build a readable page title from current route
-  const PAGE_TITLES: Record<string, string> = {
-    "/coordinator/dashboard":        "Dashboard",
-    "/coordinator/participants":     "Participants",
-    "/coordinator/reports":          "Informes",
-    "/coordinator/micro-goals":      "Micro-objectius",
-    "/coordinator/users":            "Usuaris i rols",
-    "/professional/session-logger":  "Registre de sessió",
-    "/donor/impact-portal":          "Portal d'impacte",
-    "/admin/control-center":         "Control centre",
-    "/overview":                     "Resum",
-    "/settings/plans":               "Plans",
-  };
-  const basePath    = "/" + location.pathname.split("/").slice(1, 3).join("/");
-  const pageTitle   = PAGE_TITLES[basePath] ?? PAGE_TITLES[location.pathname] ?? "ImpactFlow";
+  const links    = NAV_LINKS[role]  ?? NAV_LINKS.viewer;
+  const roleMeta = ROLE_META[role]  ?? ROLE_META.viewer;
+  const avatarKey = userId ?? role;
 
   return (
     <div className="app-shell">
-      {/* ── Sidebar ── */}
-      <aside className="sidebar">
-        {/* Logo */}
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">
-            <BarChart3 size={18} strokeWidth={2.5} />
+      {/* ── Top navigation ── */}
+      <header className="topnav">
+        {/* Brand */}
+        <Link to="/" className="topnav-brand">
+          <div className="topnav-brand-icon">
+            <BarChart3 size={16} strokeWidth={2.5} />
           </div>
-          <div>
-            <div className="brand">ImpactFlow</div>
-            <div className="sidebar-subtitle">De l'activitat a l'impacte</div>
-          </div>
-        </div>
-
-        {/* Role badge */}
-        <div
-          className="sidebar-role-badge"
-          style={{ background: roleMeta.bg, color: roleMeta.color }}
-        >
-          {roleMeta.label}
-        </div>
-
-        {/* Primary CTA */}
-        <Link
-          to={primary.to}
-          className="sidebar-cta"
-        >
-          <Zap size={15} strokeWidth={2.5} />
-          {primary.label}
+          <span className="topnav-brand-name">ImpactFlow</span>
         </Link>
 
-        {/* Nav */}
-        <nav className="sidebar-nav">
+        {/* Nav links */}
+        <nav className="topnav-nav">
           {links.map(({ to, label, icon: Icon }) => {
             const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
             return (
               <Link
                 key={to}
                 to={to}
-                className={`sidebar-link ${isActive ? "active" : ""}`}
+                className={`topnav-link${isActive ? " active" : ""}`}
               >
-                <Icon size={16} strokeWidth={2} className="sidebar-link-icon" />
-                <span>{label}</span>
-                {isActive && <ChevronRight size={14} className="sidebar-link-chevron" />}
+                <Icon size={14} strokeWidth={2} />
+                {label}
               </Link>
             );
           })}
         </nav>
 
-        {/* Footer */}
-        <div className="sidebar-footer">
-          <div className="sidebar-footer-user">
-            <div className="sidebar-footer-avatar">
-              {(userId ?? "?")[0]?.toUpperCase()}
-            </div>
-            <div className="sidebar-footer-info">
-              <span className="sidebar-footer-role">{roleMeta.label}</span>
-              <span className="sidebar-footer-id">ID {userId?.slice(0, 8) ?? "—"}</span>
-            </div>
+        {/* Right side */}
+        <div className="topnav-right">
+          {/* Command palette opener */}
+          <button
+            className="topnav-cmd"
+            onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))}
+            title="Command palette (Ctrl+K)"
+          >
+            <Command size={13} strokeWidth={2.2} />
+            <span className="topnav-cmd-text">Cerca…</span>
+            <kbd className="topnav-cmd-kbd">⌘K</kbd>
+          </button>
+
+          {/* Theme toggle */}
+          <button
+            className="topnav-icon-btn"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Mode clar" : "Mode fosc"}
+            aria-label="Canviar tema"
+          >
+            {theme === "dark" ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
+          </button>
+
+          {/* Notifications */}
+          <NotificationBell />
+
+          {/* Role badge */}
+          <span
+            className="topnav-role-badge"
+            style={{ background: roleMeta.bg, color: roleMeta.color }}
+          >
+            {roleMeta.label}
+          </span>
+
+          {/* Avatar (hue-based) */}
+          <div
+            className="topnav-avatar"
+            style={avatarStyle(avatarKey)}
+            title={`ID ${userId?.slice(0, 8) ?? "—"}`}
+          >
+            {avatarInitial(userId ?? role)}
           </div>
-          <button className="sidebar-logout-btn" onClick={logout} title="Tancar sessió">
-            <LogOut size={15} strokeWidth={2} />
-            Sortir
+
+          <button className="topnav-logout" onClick={logout} title="Tancar sessió">
+            <LogOut size={14} strokeWidth={2} />
+            <span>Sortir</span>
           </button>
         </div>
-      </aside>
+      </header>
 
-      {/* ── Content ── */}
+      {/* ── Page content ── */}
       <div className="shell-content">
-        {/* Topbar */}
-        <header className="shell-topbar">
-          <div className="shell-topbar-title">{pageTitle}</div>
-          <div className="shell-topbar-right">
-            <Link to="/donor/impact-portal" className="shell-topbar-portal-link">
-              Portal donant
-            </Link>
-          </div>
-        </header>
-
-        {/* Page */}
         <div className="container">
-          <main>{children}</main>
+          <main>
+            <PageTransition>{children}</PageTransition>
+          </main>
         </div>
       </div>
+
+      {/* ── Floating quick-logger ── */}
+      <QuickLoggerFAB />
+
+      {/* ── Command Palette ── */}
+      <CommandPalette />
     </div>
   );
 }

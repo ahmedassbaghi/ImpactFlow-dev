@@ -1,207 +1,344 @@
-/**
- * QuickSessionLogger — Redisseny UX Sprint 2
- * Objectiu: registrar una sessió en < 60 segons.
- * 4 passos: Selecció → Puntuació → Nota & Mood → Confirm
- */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Activity, BookOpen, Brain, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList,
+  Cloud, CloudRain, Compass, Globe, Meh, Search, Sparkles, Sun, UserCheck,
+  Users2, X, Zap, Star,
+} from "lucide-react";
 import { listMicroGoals } from "../../api/microGoals";
-import { listParticipants } from "../../api/participants";
+import { getEnrolledParticipants, listParticipants, type Participant } from "../../api/participants";
 import { listPrograms } from "../../api/programs";
 import { createSession } from "../../api/sessions";
 import { useLocalDraft } from "../../hooks/useLocalDraft";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
+import { OutcomesStar } from "./OutcomesStar";
+import { LiveReactions } from "./LiveReactions";
+import {
+  deriveScoreFromEvents, noteFromStarAnchors, noteFromEvents,
+  type DimKey as DataDimKey, type InputMode, type ReactionEvent,
+} from "./inputModeData";
 
 const DIMS = [
-  { key: "academicScore", label: "Acadèmic", icon: "📚", color: "var(--dim-academic)" },
-  { key: "cognitiveScore", label: "Cognitiu", icon: "🧠", color: "var(--dim-cognitive)" },
-  { key: "socialScore", label: "Social", icon: "🤝", color: "var(--dim-social)" },
-  { key: "integrationScore", label: "Integració", icon: "🌍", color: "var(--dim-integration)" },
+  { key: "academicScore",    label: "Acadèmic",    Icon: BookOpen,  color: "var(--dim-academic)" },
+  { key: "cognitiveScore",   label: "Cognitiu",    Icon: Brain,     color: "var(--dim-cognitive)" },
+  { key: "socialScore",      label: "Social",      Icon: Users2,    color: "var(--dim-social)" },
+  { key: "integrationScore", label: "Integració",  Icon: Globe,     color: "var(--dim-integration)" },
 ] as const;
 
 const MOOD_OPTIONS = [
-  { value: "very_low", emoji: "😞", label: "Molt baixa" },
-  { value: "low", emoji: "😐", label: "Baixa" },
-  { value: "neutral", emoji: "🙂", label: "Neutral" },
-  { value: "good", emoji: "😊", label: "Bona" },
-  { value: "excellent", emoji: "🤩", label: "Excel·lent" },
+  { value: "very_low",  Icon: CloudRain, label: "Molt baixa",  color: "var(--risk-high)" },
+  { value: "low",       Icon: Cloud,     label: "Baixa",       color: "var(--risk-medium)" },
+  { value: "neutral",   Icon: Meh,       label: "Neutral",     color: "var(--text-muted)" },
+  { value: "good",      Icon: Sun,       label: "Bona",        color: "var(--dim-integration)" },
+  { value: "excellent", Icon: Zap,       label: "Excel·lent",  color: "var(--brand-500)" },
+];
+
+const SESSION_TYPES = [
+  { value: "group",      label: "Grupal" },
+  { value: "individual", label: "Individual" },
+  { value: "workshop",   label: "Taller" },
+  { value: "follow_up",  label: "Seguiment" },
+];
+
+const ATTENDANCE_OPTIONS = [
+  { value: "present",             label: "Present",        color: "var(--risk-low)" },
+  { value: "late",                label: "Tard",           color: "var(--risk-medium)" },
+  { value: "absent_justified",    label: "Absent (just.)", color: "var(--text-muted)" },
+  { value: "absent_unjustified",  label: "Absent",         color: "var(--risk-high)" },
+];
+
+const QUICK_TAGS = [
+  { label: "Atenció sostinguda", icon: "🎯", insert: "Ha mostrat atenció sostinguda durant l'activitat. " },
+  { label: "Iniciativa", icon: "🚀", insert: "Ha pres la iniciativa per resoldre la tasca. " },
+  { label: "Cooperació", icon: "🤝", insert: "Ha cooperat bé amb els companys. " },
+  { label: "Frustració", icon: "😤", insert: "S'ha frustrat davant la dificultat. " },
+  { label: "Millora notable", icon: "📈", insert: "Mostra una millora notable respecte la sessió anterior. " },
+  { label: "Necessita reforç", icon: "🔁", insert: "Necessita reforç en aquest contingut. " },
 ];
 
 const STAR_LABELS = ["", "Molt baix", "Baix", "Regular", "Bé", "Excel·lent"];
 
-const SESSION_TYPES = [
-  { value: "group", label: "Grupal" },
-  { value: "individual", label: "Individual" },
-  { value: "workshop", label: "Taller" },
-  { value: "follow_up", label: "Seguiment" },
-];
-
-const ATTENDANCE_OPTIONS = [
-  { value: "present", label: "Present" },
-  { value: "late", label: "Tard" },
-  { value: "absent_justified", label: "Absent (justif.)" },
-  { value: "absent_unjustified", label: "Absent (injust.)" },
-];
-
-type DimKey = "academicScore" | "cognitiveScore" | "socialScore" | "integrationScore";
+type DimKey = DataDimKey;
 
 interface ObsState {
-  academicScore: number;
-  cognitiveScore: number;
-  socialScore: number;
-  integrationScore: number;
-  qualitativeNote: string;
-  mood: string;
-  attendance: string;
-  microGoalIds: string[];
+  academicScore: number; cognitiveScore: number; socialScore: number; integrationScore: number;
+  qualitativeNote: string; mood: string; attendance: string; microGoalIds: string[];
+  /** Reaction event log (only used in "reactions" input mode). */
+  events: ReactionEvent[];
+  /** Whether the user has typed in the textarea after auto-generation
+   *  from anchors / reactions; protects manual edits from being clobbered. */
+  noteEdited: boolean;
 }
 
 const defaultObs = (): ObsState => ({
-  academicScore: 0,
-  cognitiveScore: 0,
-  socialScore: 0,
-  integrationScore: 0,
-  qualitativeNote: "",
-  mood: "neutral",
-  attendance: "present",
-  microGoalIds: [],
+  academicScore: 0, cognitiveScore: 0, socialScore: 0, integrationScore: 0,
+  qualitativeNote: "", mood: "neutral", attendance: "present", microGoalIds: [],
+  events: [],
+  noteEdited: false,
 });
 
 interface FormState {
-  programId: string;
-  sessionType: string;
-  sessionDate: string;
-  durationMinutes: string;
-  notes: string;
-  observations: Record<string, ObsState>;
+  programId: string; sessionType: string; sessionDate: string;
+  durationMinutes: string; notes: string; observations: Record<string, ObsState>;
+  /** Per-session input paradigm; persisted so refresh keeps the choice. */
+  inputMode: InputMode;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 const defaultForm = (): FormState => ({
-  programId: "",
-  sessionType: "group",
-  sessionDate: today(),
-  durationMinutes: "45",
-  notes: "",
-  observations: {},
+  programId: "", sessionType: "group",
+  sessionDate: new Date().toISOString().slice(0, 10),
+  durationMinutes: "45", notes: "", observations: {},
+  inputMode: "stars",
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StarRating
-// ─────────────────────────────────────────────────────────────────────────────
+const INPUT_MODE_OPTIONS: { value: InputMode; label: string; icon: React.ElementType; hint: string }[] = [
+  { value: "stars",     label: "Estrelles",      icon: Star,    hint: "Ràpid · 1-5 ★ per dimensió"  },
+  { value: "star",      label: "Estrella radial", icon: Compass, hint: "Outcomes Star · descripcions ancorades" },
+  { value: "reactions", label: "Reaccions",      icon: Activity,hint: "ClassDojo · xips en directe"  },
+];
 
-function StarRating({
-  value,
-  onChange,
-  color,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  color: string;
-}) {
+function StarRating({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
   const [hover, setHover] = useState(0);
   return (
-    <div style={{ display: "flex", gap: "0.2rem" }}>
+    <div className="ql-stars">
       {[1, 2, 3, 4, 5].map((star) => {
         const filled = star <= (hover || value);
         return (
-          <button
+          <motion.button
             key={star}
             type="button"
             title={STAR_LABELS[star]}
             onMouseEnter={() => setHover(star)}
             onMouseLeave={() => setHover(0)}
             onClick={() => onChange(value === star ? 0 : star)}
-            style={{
-              width: 36,
-              height: 36,
-              border: "none",
-              background: "none",
-              cursor: "pointer",
-              fontSize: "1.4rem",
-              color: filled ? color : "var(--surface-3)",
-              padding: 0,
-              transition: "color 0.1s, transform 0.1s",
-              transform: filled ? "scale(1.1)" : "scale(1)",
-            }}
+            whileTap={{ scale: 0.85 }}
+            whileHover={{ scale: 1.12 }}
+            className="ql-star-btn"
+            style={{ color: filled ? color : "var(--surface-3)" }}
           >
-            ★
-          </button>
+            <Star size={20} fill={filled ? color : "transparent"} strokeWidth={1.8} />
+          </motion.button>
         );
       })}
+      <span className="ql-star-label">{(hover || value) ? STAR_LABELS[hover || value] : ""}</span>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
+function ParticipantAvatar({ name, size = 36 }: { name: string; size?: number }) {
+  const hash = name.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const hue = hash % 360;
+  return (
+    <div
+      className="ql-avatar"
+      style={{
+        width: size, height: size, fontSize: Math.round(size * 0.42),
+        background: `hsl(${hue}, 60%, 92%)`,
+        color: `hsl(${hue}, 65%, 38%)`,
+      }}
+    >
+      {(name?.[0] ?? "?").toUpperCase()}
+    </div>
+  );
+}
 
-export function QuickSessionLogger({ onClose }: { onClose?: () => void }) {
-  const [form, setForm, clearForm] = useLocalDraft<FormState>("quick-session-logger-v2", defaultForm);
+export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () => void; compact?: boolean }) {
+  const [_rawForm, setForm, clearForm] = useLocalDraft<FormState>("quick-session-logger-v4", defaultForm());
+  const form: FormState = { ...defaultForm(), ..._rawForm, observations: _rawForm.observations ?? {} };
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
-  const [activeParticipant, setActiveParticipant] = useState<string>("");
-  const [participantSearch, setParticipantSearch] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [search, setSearch] = useState("");
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const qc = useQueryClient();
 
-  const programsQ = useQuery({ queryKey: ["programs"], queryFn: listPrograms });
+  const programsQ = useQuery({ queryKey: ["programs"], queryFn: () => listPrograms() });
   const participantsQ = useQuery({
-    queryKey: ["participants", form.programId],
-    queryFn: () => listParticipants(form.programId || undefined),
-    enabled: !!form.programId,
+    queryKey: ["participants", "logger", form.programId],
+    queryFn: () => form.programId ? getEnrolledParticipants(form.programId) : listParticipants(),
   });
   const goalsQ = useQuery({
     queryKey: ["micro-goals", form.programId],
-    queryFn: () => listMicroGoals({ program_id: form.programId }),
+    queryFn: () => listMicroGoals({ programId: form.programId }),
     enabled: !!form.programId,
   });
 
+  const programs = programsQ.data ?? [];
   const participants = participantsQ.data ?? [];
   const goals = goalsQ.data ?? [];
 
-  const filteredParticipants = useMemo(
-    () =>
-      participants.filter(
-        (p) =>
-          !selectedParticipants.includes(p.id) &&
-          (p.first_name.toLowerCase().includes(participantSearch.toLowerCase()) ||
-            p.code.toLowerCase().includes(participantSearch.toLowerCase()))
-      ),
-    [participants, selectedParticipants, participantSearch]
-  );
+  // Auto-select program if only one
+  useEffect(() => {
+    if (!form.programId && programs.length === 1) {
+      setForm((prev) => ({ ...prev, programId: programs[0].id }));
+    }
+  }, [programs.length]); // eslint-disable-line
+
+  const activeParticipantId = selectedParticipants[activeIdx] ?? "";
+  // Merge with defaultObs so legacy localStorage entries gain new fields
+  // (events, noteEdited) without runtime errors.
+  const activeObs: ObsState = {
+    ...defaultObs(),
+    ...((form.observations ?? {})[activeParticipantId] ?? {}),
+  };
+
+  const filteredAvailable = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return participants.filter(
+      (p) =>
+        !selectedParticipants.includes(p.id) &&
+        (!q || p.first_name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+    );
+  }, [participants, selectedParticipants, search]);
+
+  const setObs = (pid: string, key: keyof ObsState, value: unknown) => {
+    setForm((prev) => ({
+      ...prev,
+      observations: {
+        ...(prev.observations ?? {}),
+        [pid]: { ...defaultObs(), ...((prev.observations ?? {})[pid] ?? {}), [key]: value },
+      },
+    }));
+  };
+
+  /** Mode-aware setter for the qualitative note (marks noteEdited so the
+   *  auto-generated text from anchors/reactions doesn't overwrite it). */
+  const handleNoteChange = (pid: string, text: string) => {
+    setForm((prev) => ({
+      ...prev,
+      observations: {
+        ...(prev.observations ?? {}),
+        [pid]: {
+          ...defaultObs(),
+          ...((prev.observations ?? {})[pid] ?? {}),
+          qualitativeNote: text,
+          noteEdited: true,
+        },
+      },
+    }));
+  };
+
+  /** Apply event-log change to the active participant in "reactions" mode.
+   *  Recomputes the four 1-5 dimension scores so the IPI-bound payload
+   *  stays in sync with the live tape. */
+  const handleEventsChange = (pid: string, events: ReactionEvent[]) => {
+    const academic    = deriveScoreFromEvents("academicScore",    events);
+    const cognitive   = deriveScoreFromEvents("cognitiveScore",   events);
+    const social      = deriveScoreFromEvents("socialScore",      events);
+    const integration = deriveScoreFromEvents("integrationScore", events);
+    setForm((prev) => {
+      const prevObs: ObsState = { ...defaultObs(), ...((prev.observations ?? {})[pid] ?? {}) };
+      return {
+        ...prev,
+        observations: {
+          ...(prev.observations ?? {}),
+          [pid]: {
+            ...prevObs,
+            events,
+            academicScore: academic,
+            cognitiveScore: cognitive,
+            socialScore: social,
+            integrationScore: integration,
+          },
+        },
+      };
+    });
+  };
+
+  /** Apply Outcomes Star anchor selection to the active participant. */
+  const handleStarChange = (pid: string, dim: DimKey, value: number) => {
+    setForm((prev) => ({
+      ...prev,
+      observations: {
+        ...(prev.observations ?? {}),
+        [pid]: { ...defaultObs(), ...((prev.observations ?? {})[pid] ?? {}), [dim]: value },
+      },
+    }));
+  };
+
+  /** Switch input mode for the whole session. Existing scores are kept
+   *  so switching is non-destructive; only the input UI changes. */
+  const handleModeChange = (mode: InputMode) => {
+    setForm((prev) => ({ ...prev, inputMode: mode }));
+  };
+
+  const toggleParticipant = (id: string) => {
+    setSelectedParticipants((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((p) => p !== id);
+        setActiveIdx(Math.min(activeIdx, Math.max(0, next.length - 1)));
+        return next;
+      }
+      const next = [...prev, id];
+      setActiveIdx(next.length - 1);
+      if (!(id in (form.observations ?? {}))) {
+        setForm((prevF) => ({
+          ...prevF,
+          observations: { ...(prevF.observations ?? {}), [id]: defaultObs() },
+        }));
+      }
+      return next;
+    });
+  };
+
+  const insertTag = (text: string) => {
+    if (!activeParticipantId) return;
+    setObs(activeParticipantId, "qualitativeNote", (activeObs.qualitativeNote || "") + text);
+  };
+
+  const handleProgramChange = (programId: string) => {
+    setForm((prev) => ({ ...prev, programId, observations: {} }));
+    setSelectedParticipants([]);
+    setActiveIdx(0);
+    setSearch("");
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!form.programId) throw new Error("Selecciona un programa abans de desar.");
       const observations = selectedParticipants
         .map((pid) => {
-          const obs = form.observations[pid] ?? defaultObs();
+          const obs: ObsState = { ...defaultObs(), ...(form.observations[pid] ?? {}) };
+
+          /* ───── Compose qualitative_note depending on input mode ─────
+             We send the same numeric scores in every mode (1-5 per dim
+             → IPI calc unchanged) but enrich the note with structured
+             metadata captured by the alternative input UIs.            */
+          const userText = obs.qualitativeNote.trim();
+          let composedNote = userText;
+          if (form.inputMode === "star") {
+            const anchorText = noteFromStarAnchors({
+              academicScore:    obs.academicScore,
+              cognitiveScore:   obs.cognitiveScore,
+              socialScore:      obs.socialScore,
+              integrationScore: obs.integrationScore,
+            });
+            composedNote = anchorText
+              ? (userText ? `${anchorText}\n\nObservació: ${userText}` : anchorText)
+              : userText;
+          } else if (form.inputMode === "reactions") {
+            const eventText = noteFromEvents(obs.events);
+            composedNote = eventText
+              ? (userText ? `Reaccions registrades — ${eventText}\n\nObservació: ${userText}` : `Reaccions registrades — ${eventText}`)
+              : userText;
+          }
+
           return {
             participant_id: pid,
-            academic_score: obs.academicScore || null,
-            cognitive_score: obs.cognitiveScore || null,
-            social_score: obs.socialScore || null,
-            integration_score: obs.integrationScore || null,
-            qualitative_note: obs.qualitativeNote || null,
+            academic_score: obs.academicScore || undefined,
+            cognitive_score: obs.cognitiveScore || undefined,
+            social_score: obs.socialScore || undefined,
+            integration_score: obs.integrationScore || undefined,
+            qualitative_note: composedNote || undefined,
             mood_indicator: obs.mood,
             attendance_status: obs.attendance,
             micro_goals_completed: obs.microGoalIds,
           };
         })
-        .filter((o) =>
-          [o.academic_score, o.cognitive_score, o.social_score, o.integration_score].some(
-            (v) => v !== null
-          )
-        );
+        .filter((o) => [o.academic_score, o.cognitive_score, o.social_score, o.integration_score].some((v) => v !== undefined));
 
-      if (observations.length === 0) {
+      if (observations.length === 0)
         throw new Error("Cal puntuar almenys una dimensió per a un participant.");
-      }
 
       return createSession({
         program_id: form.programId,
@@ -216,596 +353,492 @@ export function QuickSessionLogger({ onClose }: { onClose?: () => void }) {
       setSaved(true);
       clearForm();
       setSelectedParticipants([]);
-      setActiveParticipant("");
+      setActiveIdx(0);
       qc.invalidateQueries({ queryKey: ["sessions"] });
       qc.invalidateQueries({ queryKey: ["participants"] });
-      setTimeout(() => {
-        setSaved(false);
-        onClose?.();
-      }, 2500);
+      setTimeout(() => { setSaved(false); onClose?.(); }, 2000);
     },
-    onError: (err: Error) => {
-      setSaveError(err.message || "Error en guardar la sessió.");
-    },
+    onError: (err: Error) => setSaveError(err.message || "Error en guardar la sessió."),
   });
 
-  const setObs = (pid: string, key: keyof ObsState, value: unknown) => {
-    setForm((prev) => ({
-      ...prev,
-      observations: {
-        ...prev.observations,
-        [pid]: { ...(prev.observations[pid] ?? defaultObs()), [key]: value },
-      },
-    }));
-  };
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (selectedParticipants.length > 0 && form.programId) {
+          setSaveError("");
+          saveMutation.mutate();
+        }
+      }
+      if (e.key === "Escape" && onClose) onClose();
+      if (selectedParticipants.length > 1 && e.altKey) {
+        if (e.key === "ArrowRight") setActiveIdx((i) => Math.min(i + 1, selectedParticipants.length - 1));
+        if (e.key === "ArrowLeft") setActiveIdx((i) => Math.max(i - 1, 0));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedParticipants, form.programId]); // eslint-disable-line
 
-  // When a program is selected, reset participants
-  const handleProgramChange = (programId: string) => {
-    setForm((prev) => ({ ...prev, programId, observations: {} }));
-    setSelectedParticipants([]);
-    setActiveParticipant("");
-  };
+  const scoredCount = selectedParticipants.filter((pid) => {
+    const obs = (form.observations ?? {})[pid];
+    return obs && [obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0);
+  }).length;
 
-  const addParticipant = (id: string) => {
-    setSelectedParticipants((prev) => [...prev, id]);
-    setActiveParticipant(id);
-    setParticipantSearch("");
-    if (!(id in form.observations)) {
-      setForm((prev) => ({
-        ...prev,
-        observations: { ...prev.observations, [id]: defaultObs() },
-      }));
-    }
-  };
-
-  const removeParticipant = (id: string) => {
-    setSelectedParticipants((prev) => prev.filter((p) => p !== id));
-    if (activeParticipant === id) {
-      const remaining = selectedParticipants.filter((p) => p !== id);
-      setActiveParticipant(remaining[0] ?? "");
-    }
-  };
-
-  const participantName = (id: string) => {
-    const p = participants.find((p) => p.id === id);
-    return p ? `${p.first_name} (${p.code})` : id.slice(0, 8);
-  };
-
-  const participantInitials = (id: string) => {
-    const p = participants.find((p) => p.id === id);
-    return p ? p.first_name[0].toUpperCase() : "?";
-  };
-
-  const currentObs = form.observations[activeParticipant] ?? defaultObs();
+  const completionPct = selectedParticipants.length > 0
+    ? Math.round((scoredCount / selectedParticipants.length) * 100)
+    : 0;
 
   if (saved) {
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "0.75rem",
-          padding: "3rem",
-          color: "var(--risk-low)",
-        }}
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22 }}
+        className="ql-success"
       >
-        <div style={{ fontSize: "3rem" }}>✓</div>
-        <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>Sessió guardada</div>
-        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-          Anàlisi IA en procés...
-        </div>
-      </div>
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.15, type: "spring", stiffness: 400 }}
+          className="ql-success-icon"
+        >
+          <CheckCircle2 size={48} strokeWidth={1.6} />
+        </motion.div>
+        <div className="ql-success-title">Sessió registrada</div>
+        <div className="ql-success-sub">Les observacions s'han desat correctament.</div>
+      </motion.div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      {/* ── STEP 1: Programa + metadades ─────────────────────────────────── */}
-      <section>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto auto auto",
-            gap: "0.5rem",
-            alignItems: "end",
-          }}
-        >
-          {/* Programa */}
-          <div>
-            <label style={labelStyle}>Programa</label>
-            <select
-              value={form.programId}
-              onChange={(e) => handleProgramChange(e.target.value)}
-              style={selectStyle}
-            >
-              <option value="">Selecciona programa...</option>
-              {(programsQ.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Tipus */}
-          <div>
-            <label style={labelStyle}>Tipus</label>
-            <select
-              value={form.sessionType}
-              onChange={(e) => setForm((prev) => ({ ...prev, sessionType: e.target.value }))}
-              style={selectStyle}
-            >
-              {SESSION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Data */}
-          <div>
-            <label style={labelStyle}>Data</label>
-            <input
-              type="date"
-              value={form.sessionDate}
-              onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Durada */}
-          <div>
-            <label style={labelStyle}>Minuts</label>
-            <input
-              type="number"
-              value={form.durationMinutes}
-              min={5}
-              max={180}
-              onChange={(e) => setForm((prev) => ({ ...prev, durationMinutes: e.target.value }))}
-              style={{ ...inputStyle, width: 70 }}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ── STEP 2: Selecció de participants ─────────────────────────────── */}
-      {form.programId && (
-        <section>
-          <label style={labelStyle}>Participants</label>
-
-          {/* Selected chips */}
-          {selectedParticipants.length > 0 && (
-            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
-              {selectedParticipants.map((pid) => (
-                <button
-                  key={pid}
-                  type="button"
-                  onClick={() => setActiveParticipant(pid)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.35rem",
-                    padding: "0.25rem 0.6rem 0.25rem 0.35rem",
-                    borderRadius: 999,
-                    border: `2px solid ${activeParticipant === pid ? "var(--brand-500)" : "var(--border)"}`,
-                    background:
-                      activeParticipant === pid ? "var(--brand-100)" : "var(--surface-1)",
-                    cursor: "pointer",
-                    fontSize: "0.82rem",
-                    fontWeight: 600,
-                    color:
-                      activeParticipant === pid ? "var(--brand-700)" : "var(--text-secondary)",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background: "var(--brand-500)",
-                      color: "white",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.72rem",
-                      fontWeight: 800,
-                    }}
-                  >
-                    {participantInitials(pid)}
-                  </span>
-                  {participantName(pid)}
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeParticipant(pid);
-                    }}
-                    style={{
-                      marginLeft: 2,
-                      color: "var(--text-muted)",
-                      fontSize: "0.75rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    ×
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Search to add */}
-          <div style={{ position: "relative" }}>
-            <input
-              type="text"
-              placeholder="Cerca participant per nom o codi..."
-              value={participantSearch}
-              onChange={(e) => setParticipantSearch(e.target.value)}
-              style={inputStyle}
-            />
-            {participantSearch && filteredParticipants.length > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  background: "var(--surface-0)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  zIndex: 50,
-                  maxHeight: 180,
-                  overflowY: "auto",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                }}
-              >
-                {filteredParticipants.slice(0, 8).map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => addParticipant(p.id)}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: "0.5rem 0.75rem",
-                      textAlign: "left",
-                      border: "none",
-                      background: "none",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      color: "var(--text-primary)",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "var(--surface-1)")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "none")
-                    }
-                  >
-                    <strong>{p.first_name}</strong>{" "}
-                    <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
-                      {p.code}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── STEP 3: Puntuació del participant actiu ───────────────────────── */}
-      {activeParticipant && (
-        <section
-          style={{
-            background: "var(--surface-1)",
-            border: "1px solid var(--border)",
-            borderRadius: 14,
-            padding: "1rem 1.1rem",
-          }}
-        >
-          <div
-            style={{
-              marginBottom: "0.75rem",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              color: "var(--text-secondary)",
-            }}
+    <div className={`ql-shell ${compact ? "ql-shell--compact" : ""}`}>
+      {/* ── Top bar: meta + progress ──────────────────────────────── */}
+      <div className="ql-topbar">
+        <div className="ql-topbar-meta">
+          <select
+            className="ql-meta-input ql-meta-program"
+            value={form.programId}
+            onChange={(e) => handleProgramChange(e.target.value)}
           >
-            Avaluant: <span style={{ color: "var(--text-primary)" }}>{participantName(activeParticipant)}</span>
-          </div>
+            <option value="">— Programa —</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
 
-          {/* Dimension scores */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginBottom: "0.9rem" }}>
-            {DIMS.map(({ key, label, icon, color }) => (
-              <div
-                key={key}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.75rem",
-                }}
+          <div className="ql-meta-pills">
+            {SESSION_TYPES.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                className={`ql-meta-pill ${form.sessionType === t.value ? "active" : ""}`}
+                onClick={() => setForm((prev) => ({ ...prev, sessionType: t.value }))}
               >
-                <span
-                  style={{
-                    minWidth: 110,
-                    fontSize: "0.85rem",
-                    fontWeight: 700,
-                    color,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.35rem",
-                  }}
-                >
-                  {icon} {label}
-                </span>
-                <StarRating
-                  value={currentObs[key as DimKey] as number}
-                  onChange={(v) => setObs(activeParticipant, key as DimKey, v)}
-                  color={color}
-                />
-                <span
-                  style={{
-                    fontSize: "0.78rem",
-                    color: "var(--text-muted)",
-                    minWidth: 80,
-                  }}
-                >
-                  {(currentObs[key as DimKey] as number)
-                    ? STAR_LABELS[currentObs[key as DimKey] as number]
-                    : "—"}
-                </span>
-              </div>
+                {t.label}
+              </button>
             ))}
           </div>
 
-          {/* Attendance + Mood */}
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}
-          >
-            <div>
-              <label style={labelStyle}>Assistència</label>
-              <select
-                value={currentObs.attendance}
-                onChange={(e) => setObs(activeParticipant, "attendance", e.target.value)}
-                style={selectStyle}
-              >
-                {ATTENDANCE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Estat anímic</label>
-              <div style={{ display: "flex", gap: "0.3rem", marginTop: 4 }}>
-                {MOOD_OPTIONS.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    title={m.label}
-                    onClick={() => setObs(activeParticipant, "mood", m.value)}
-                    style={{
-                      fontSize: "1.35rem",
-                      border:
-                        currentObs.mood === m.value
-                          ? "2px solid var(--brand-500)"
-                          : "2px solid transparent",
-                      borderRadius: 8,
-                      background:
-                        currentObs.mood === m.value ? "var(--brand-100)" : "none",
-                      cursor: "pointer",
-                      padding: "0.15rem 0.3rem",
-                      transition: "border 0.1s",
-                    }}
-                  >
-                    {m.emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Qualitative note */}
-          <div>
-            <label style={labelStyle}>
-              Nota (opcional) — l'IA extraurà etiquetes automàticament
-            </label>
-            <textarea
-              value={currentObs.qualitativeNote}
-              onChange={(e) => setObs(activeParticipant, "qualitativeNote", e.target.value)}
-              placeholder={`Avui, ${participantName(activeParticipant).split(" ")[0]} ha...`}
-              rows={2}
-              style={{
-                ...inputStyle,
-                resize: "vertical",
-                fontFamily: "inherit",
-                lineHeight: 1.5,
-              }}
-            />
-          </div>
-
-          {/* Micro-goals */}
-          {goals.length > 0 && (
-            <div style={{ marginTop: "0.6rem" }}>
-              <label style={labelStyle}>Micro-objectius completats</label>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.3rem",
-                  maxHeight: 140,
-                  overflowY: "auto",
-                }}
-              >
-                {goals.map((g) => {
-                  const checked = currentObs.microGoalIds.includes(g.id);
-                  return (
-                    <label
-                      key={g.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        padding: "0.35rem 0.5rem",
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        background: checked ? "var(--brand-100)" : "none",
-                        fontSize: "0.83rem",
-                        color: checked ? "var(--brand-700)" : "var(--text-secondary)",
-                        fontWeight: checked ? 600 : 400,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          const ids = checked
-                            ? currentObs.microGoalIds.filter((id) => id !== g.id)
-                            : [...currentObs.microGoalIds, g.id];
-                          setObs(activeParticipant, "microGoalIds", ids);
-                        }}
-                        style={{ accentColor: "var(--brand-500)" }}
-                      />
-                      {g.title}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Nav between participants */}
-          {selectedParticipants.length > 1 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: "0.75rem",
-                gap: "0.5rem",
-              }}
-            >
-              {selectedParticipants.map((pid) => (
-                <button
-                  key={pid}
-                  type="button"
-                  onClick={() => setActiveParticipant(pid)}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: "50%",
-                    border: `2px solid ${activeParticipant === pid ? "var(--brand-500)" : "var(--border)"}`,
-                    background:
-                      activeParticipant === pid ? "var(--brand-500)" : "var(--surface-1)",
-                    color: activeParticipant === pid ? "white" : "var(--text-secondary)",
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  {participantInitials(pid)}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ── Session notes ─────────────────────────────────────────────────── */}
-      {selectedParticipants.length > 0 && (
-        <section>
-          <label style={labelStyle}>Nota general de la sessió (opcional)</label>
-          <textarea
-            value={form.notes}
-            onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
-            placeholder="Comentaris generals sobre la sessió..."
-            rows={2}
-            style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+          <input
+            type="date"
+            className="ql-meta-input ql-meta-date"
+            value={form.sessionDate}
+            onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
           />
-        </section>
-      )}
 
-      {/* ── SAVE BUTTON ───────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        {saveError && (
-          <div
-            style={{
-              padding: "0.5rem 0.75rem",
-              borderRadius: 8,
-              background: "var(--risk-high-bg)",
-              color: "var(--risk-high)",
-              fontSize: "0.85rem",
-              fontWeight: 600,
-            }}
-          >
-            {saveError}
+          <div className="ql-meta-duration">
+            <input
+              type="number"
+              min={5} max={240}
+              className="ql-meta-input ql-meta-mins"
+              value={form.durationMinutes}
+              onChange={(e) => setForm((prev) => ({ ...prev, durationMinutes: e.target.value }))}
+            />
+            <span className="ql-meta-mins-label">min</span>
+          </div>
+
+          {/* ── Input mode segmented toggle ─────────────────────────── */}
+          <div className="ql-mode-toggle" role="tablist" aria-label="Mode d'entrada">
+            {INPUT_MODE_OPTIONS.map(({ value, label, icon: Icon, hint }) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={form.inputMode === value}
+                className={`ql-mode-btn ${form.inputMode === value ? "active" : ""}`}
+                onClick={() => handleModeChange(value)}
+                title={hint}
+              >
+                <Icon size={13} strokeWidth={2.2} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {selectedParticipants.length > 0 && (
+          <div className="ql-progress-block">
+            <div className="ql-progress-label">
+              <strong>{scoredCount}</strong>/{selectedParticipants.length} puntuats
+            </div>
+            <div className="ql-progress-track">
+              <motion.div
+                className="ql-progress-fill"
+                initial={{ width: 0 }}
+                animate={{ width: `${completionPct}%` }}
+                transition={{ duration: 0.4 }}
+              />
+            </div>
           </div>
         )}
-        <button
-          type="button"
-          disabled={saveMutation.isPending || selectedParticipants.length === 0 || !form.programId}
-          onClick={() => {
-            setSaveError("");
-            saveMutation.mutate();
-          }}
-          style={{
-            padding: "0.85rem",
-            borderRadius: 10,
-            border: "none",
-            background:
-              saveMutation.isPending || selectedParticipants.length === 0 || !form.programId
-                ? "var(--surface-3)"
-                : "var(--brand-500)",
-            color:
-              saveMutation.isPending || selectedParticipants.length === 0 || !form.programId
-                ? "var(--text-muted)"
-                : "white",
-            fontSize: "0.95rem",
-            fontWeight: 700,
-            cursor:
-              saveMutation.isPending || selectedParticipants.length === 0 || !form.programId
-                ? "not-allowed"
-                : "pointer",
-            transition: "background 0.15s",
-          }}
-        >
-          {saveMutation.isPending ? "Guardant..." : "Guardar sessió →"}
-        </button>
+      </div>
+
+      {/* ── Two-column body ───────────────────────────────────────── */}
+      <div className="ql-body">
+        {/* LEFT: Participants pool */}
+        <div className="ql-pool">
+          <div className="ql-pool-header">
+            <div className="ql-pool-title">
+              <Users2 size={14} strokeWidth={2} />
+              Participants
+              <span className="ql-pool-count">{selectedParticipants.length} sel.</span>
+            </div>
+            <div className="ql-pool-search">
+              <Search size={13} strokeWidth={2} className="ql-pool-search-icon" />
+              <input
+                type="text"
+                placeholder="Cerca per nom o codi…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="ql-pool-search-input"
+              />
+            </div>
+          </div>
+
+          {participantsQ.isLoading ? (
+            <div className="ql-pool-state">Carregant participants…</div>
+          ) : participants.length === 0 ? (
+            <div className="ql-pool-state">
+              {form.programId
+                ? "Cap participant inscrit. Inscriu-ne des de Programes."
+                : "Cap participant. Crea'n des de la pàgina de Participants."}
+            </div>
+          ) : (
+            <div className="ql-pool-grid">
+              {selectedParticipants.length > 0 && (
+                <div className="ql-pool-section-label">Seleccionats</div>
+              )}
+              <AnimatePresence>
+                {selectedParticipants.map((pid) => {
+                  const p = participants.find((x: Participant) => x.id === pid);
+                  if (!p) return null;
+                  const obs = (form.observations ?? {})[pid];
+                  const scored = obs && [obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0);
+                  return (
+                    <motion.button
+                      key={pid}
+                      type="button"
+                      layout
+                      initial={{ opacity: 0, scale: 0.92 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.85 }}
+                      transition={{ type: "spring", stiffness: 320, damping: 24 }}
+                      className={`ql-chip ${activeIdx === selectedParticipants.indexOf(pid) ? "active" : ""} ${scored ? "scored" : ""}`}
+                      onClick={() => setActiveIdx(selectedParticipants.indexOf(pid))}
+                    >
+                      <ParticipantAvatar name={p.first_name} size={28} />
+                      <span className="ql-chip-name">{p.first_name}</span>
+                      {scored && <Check size={12} strokeWidth={3} className="ql-chip-check" />}
+                      <span
+                        className="ql-chip-x"
+                        onClick={(e) => { e.stopPropagation(); toggleParticipant(pid); }}
+                      >
+                        <X size={12} strokeWidth={2.5} />
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </AnimatePresence>
+
+              {filteredAvailable.length > 0 && (
+                <div className="ql-pool-section-label" style={{ marginTop: selectedParticipants.length > 0 ? 10 : 0 }}>
+                  Disponibles ({filteredAvailable.length})
+                </div>
+              )}
+              <AnimatePresence>
+                {filteredAvailable.map((p) => (
+                  <motion.button
+                    key={p.id}
+                    type="button"
+                    layout
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="ql-chip ql-chip--available"
+                    onClick={() => toggleParticipant(p.id)}
+                  >
+                    <ParticipantAvatar name={p.first_name} size={28} />
+                    <span className="ql-chip-name">{p.first_name}</span>
+                    <span className="ql-chip-code">{p.code.slice(-3)}</span>
+                  </motion.button>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Active participant scoring */}
+        <div className="ql-active">
+          {!activeParticipantId ? (
+            <div className="ql-empty">
+              <ClipboardList size={42} strokeWidth={1.4} className="ql-empty-icon" />
+              <div className="ql-empty-title">Selecciona participants</div>
+              <div className="ql-empty-sub">
+                Toca els participants de l'esquerra per puntuar-los. Pots afegir-ne tants com calgui.
+              </div>
+            </div>
+          ) : (() => {
+            const p = participants.find((x: Participant) => x.id === activeParticipantId);
+            if (!p) return null;
+            return (
+              <motion.div
+                key={activeParticipantId}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.22 }}
+                className="ql-scoring"
+              >
+                <div className="ql-scoring-header">
+                  <ParticipantAvatar name={p.first_name} size={48} />
+                  <div className="ql-scoring-name-block">
+                    <div className="ql-scoring-name">{p.first_name}</div>
+                    <div className="ql-scoring-code">{p.code}</div>
+                  </div>
+
+                  {selectedParticipants.length > 1 && (
+                    <div className="ql-scoring-nav">
+                      <button
+                        type="button"
+                        className="ql-nav-btn"
+                        onClick={() => setActiveIdx(Math.max(0, activeIdx - 1))}
+                        disabled={activeIdx === 0}
+                        title="Anterior (Alt+←)"
+                      >
+                        <ChevronLeft size={14} strokeWidth={2.5} />
+                      </button>
+                      <span className="ql-nav-counter">{activeIdx + 1} / {selectedParticipants.length}</span>
+                      <button
+                        type="button"
+                        className="ql-nav-btn"
+                        onClick={() => setActiveIdx(Math.min(selectedParticipants.length - 1, activeIdx + 1))}
+                        disabled={activeIdx === selectedParticipants.length - 1}
+                        title="Següent (Alt+→)"
+                      >
+                        <ChevronRight size={14} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="ql-row">
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      <UserCheck size={12} strokeWidth={2} />
+                      Assistència
+                    </div>
+                    <div className="ql-att-pills">
+                      {ATTENDANCE_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          className={`ql-att-pill ${activeObs.attendance === o.value ? "active" : ""}`}
+                          style={activeObs.attendance === o.value
+                            ? { borderColor: o.color, color: o.color, background: `color-mix(in srgb, ${o.color} 12%, transparent)` }
+                            : {}}
+                          onClick={() => setObs(activeParticipantId, "attendance", o.value)}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      <Sparkles size={12} strokeWidth={2} />
+                      Estat anímic
+                    </div>
+                    <div className="ql-mood-row">
+                      {MOOD_OPTIONS.map((m) => (
+                        <motion.button
+                          key={m.value}
+                          type="button"
+                          title={m.label}
+                          whileTap={{ scale: 0.85 }}
+                          className={`ql-mood-btn ${activeObs.mood === m.value ? "active" : ""}`}
+                          style={activeObs.mood === m.value
+                            ? { borderColor: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)`, color: m.color }
+                            : {}}
+                          onClick={() => setObs(activeParticipantId, "mood", m.value)}
+                        >
+                          <m.Icon size={16} strokeWidth={2} />
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ql-block">
+                  <div className="ql-block-label">
+                    {form.inputMode === "stars"     && "Puntuació per dimensió"}
+                    {form.inputMode === "star"      && "Estrella d'evolució (Outcomes Star)"}
+                    {form.inputMode === "reactions" && "Reaccions en directe"}
+                    <span className="ql-block-hint">
+                      {form.inputMode === "stars"     && "1-5 estrelles per dimensió"}
+                      {form.inputMode === "star"      && "Clica un nivell a cada eix · descripcions ancorades"}
+                      {form.inputMode === "reactions" && "Toca xips a mesura que observes · scores derivats"}
+                    </span>
+                  </div>
+
+                  {form.inputMode === "stars" && (
+                    <div className="ql-dim-grid">
+                      {DIMS.map(({ key, label, Icon, color }) => (
+                        <div key={key} className="ql-dim-card">
+                          <div className="ql-dim-card-head" style={{ color }}>
+                            <Icon size={14} strokeWidth={2.2} />
+                            <span>{label}</span>
+                          </div>
+                          <StarRating
+                            value={activeObs[key as DimKey] as number}
+                            onChange={(v) => setObs(activeParticipantId, key as DimKey, v)}
+                            color={color}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {form.inputMode === "star" && (
+                    <OutcomesStar
+                      scores={{
+                        academicScore:    activeObs.academicScore,
+                        cognitiveScore:   activeObs.cognitiveScore,
+                        socialScore:      activeObs.socialScore,
+                        integrationScore: activeObs.integrationScore,
+                      }}
+                      onChange={(dim, v) => handleStarChange(activeParticipantId, dim as DimKey, v)}
+                    />
+                  )}
+
+                  {form.inputMode === "reactions" && (
+                    <LiveReactions
+                      events={activeObs.events}
+                      onChange={(next) => handleEventsChange(activeParticipantId, next)}
+                    />
+                  )}
+                </div>
+
+                <div className="ql-block">
+                  <div className="ql-block-label">
+                    Nota d'observació
+                    <span className="ql-block-hint">Etiquetes ràpides</span>
+                  </div>
+                  <div className="ql-tag-row">
+                    {QUICK_TAGS.map((t) => (
+                      <button
+                        key={t.label}
+                        type="button"
+                        className="ql-tag"
+                        onClick={() => insertTag(t.insert)}
+                      >
+                        <span className="ql-tag-emoji">{t.icon}</span>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    className="ql-textarea"
+                    rows={3}
+                    value={activeObs.qualitativeNote}
+                    onChange={(e) => handleNoteChange(activeParticipantId, e.target.value)}
+                    placeholder={
+                      form.inputMode === "star"
+                        ? "(Opcional) Afegeix una observació personalitzada — la descripció del nivell ja s'incorpora automàticament."
+                        : form.inputMode === "reactions"
+                        ? "(Opcional) Comentari addicional — el resum de reaccions s'afegeix automàticament al desar."
+                        : `Avui, ${p.first_name} ha…`
+                    }
+                  />
+                </div>
+
+                {goals.length > 0 && (
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      Micro-objectius assolits avui
+                      {activeObs.microGoalIds.length > 0 && (
+                        <span className="ql-goal-count">{activeObs.microGoalIds.length}</span>
+                      )}
+                    </div>
+                    <div className="ql-goal-pills">
+                      {goals.map((g) => {
+                        const checked = activeObs.microGoalIds.includes(g.id);
+                        return (
+                          <motion.button
+                            key={g.id}
+                            type="button"
+                            whileTap={{ scale: 0.94 }}
+                            className={`ql-goal-pill ${checked ? "active" : ""}`}
+                            onClick={() => {
+                              const ids = checked
+                                ? activeObs.microGoalIds.filter((id) => id !== g.id)
+                                : [...activeObs.microGoalIds, g.id];
+                              setObs(activeParticipantId, "microGoalIds", ids);
+                            }}
+                          >
+                            {checked && <Check size={11} strokeWidth={3} />}
+                            {g.title}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* ── Footer ───────────────────────────────────────────────── */}
+      <div className="ql-footer">
+        {selectedParticipants.length > 0 && (
+          <input
+            type="text"
+            className="ql-session-note"
+            placeholder="Nota general de la sessió (opcional)…"
+            value={form.notes}
+            onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+          />
+        )}
+
+        <div className="ql-footer-actions">
+          {saveError && <div className="ql-save-error">{saveError}</div>}
+          <span className="ql-shortcut-hint">⌘/Ctrl + S</span>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            disabled={saveMutation.isPending || !form.programId || selectedParticipants.length === 0}
+            onClick={() => { setSaveError(""); saveMutation.mutate(); }}
+            className="ql-save-btn"
+          >
+            {saveMutation.isPending
+              ? "Desant…"
+              : `Desar · ${selectedParticipants.length} ${selectedParticipants.length === 1 ? "participant" : "participants"}`}
+          </motion.button>
+        </div>
       </div>
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared micro-styles
-// ─────────────────────────────────────────────────────────────────────────────
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "0.75rem",
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
-  color: "var(--text-muted)",
-  marginBottom: 4,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.5rem 0.65rem",
-  borderRadius: 8,
-  border: "1px solid var(--border)",
-  background: "var(--surface-0)",
-  fontSize: "0.88rem",
-  color: "var(--text-primary)",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  cursor: "pointer",
-};

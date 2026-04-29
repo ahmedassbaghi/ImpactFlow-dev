@@ -30,6 +30,29 @@ export async function createParticipant(payload: {
   return data;
 }
 
+export type BaselinePayload = {
+  participant_id: string;
+  program_id: string;
+  assessment_date: string;
+  reading_level?: number;
+  math_level?: number;
+  comprehension_level?: number;
+  attention_level?: number;
+  memory_level?: number;
+  autonomy_level?: number;
+  peer_interaction?: number;
+  group_work?: number;
+  emotional_regulation?: number;
+  language_fluency?: number;
+  cultural_adaptation?: number;
+  notes?: string;
+};
+
+export async function createBaseline(participantId: string, payload: BaselinePayload) {
+  const { data } = await apiClient.post(`/participants/${participantId}/baseline`, payload);
+  return data;
+}
+
 export async function getParticipantEvolution(participantId: string) {
   const { data } = await apiClient.get(`/participants/${participantId}/evolution`);
   return data;
@@ -74,4 +97,17 @@ export async function getParticipantSegments(programId: string) {
     params: { program_id: programId },
   });
   return data;
+}
+
+export async function getEnrolledParticipants(programId: string): Promise<Participant[]> {
+  const { data } = await apiClient.get<Participant[]>(`/programs/${programId}/participants`);
+  return data;
+}
+
+export async function enrollParticipant(programId: string, participantId: string): Promise<void> {
+  await apiClient.post(`/programs/${programId}/participants`, { participant_id: participantId });
+}
+
+export async function unenrollParticipant(programId: string, participantId: string): Promise<void> {
+  await apiClient.delete(`/programs/${programId}/participants/${participantId}`);
 }

@@ -25,7 +25,12 @@ export function SignificanceIndicator({ p, significant }: Props) {
       <span className="stat-evidence-badge" style={{ color, background: bg }}>
         {label}
       </span>
-      <div className="stat-evidence-hint">Wilcoxon signed-rank</div>
+      <div className="stat-evidence-hint">Wilcoxon signed-rank — detecta canvis reals</div>
+      <div className="stat-evidence-plain">
+        {isSig
+          ? "El canvi no és fruit de l'atzar (p < 0.05)."
+          : "No hi ha prou evidència estadística del canvi."}
+      </div>
     </div>
   );
 }

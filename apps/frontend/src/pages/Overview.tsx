@@ -58,7 +58,7 @@ export default function OverviewPage() {
 
   const { data: programs = [] } = useQuery({
     queryKey: ["programs"],
-    queryFn: listPrograms,
+    queryFn: () => listPrograms(),
     enabled: role !== "donor" && role !== "viewer",
   });
 

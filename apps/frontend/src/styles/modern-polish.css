@@ -1,0 +1,211 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   MODERN POLISH — animations, focus rings, refined inputs
+   Loaded last so it overrides earlier styles where needed.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── Global keyframes ──────────────────────────────────────────────── */
+@keyframes ifFadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ifShimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes ifPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* ─── Page-level entrance ──────────────────────────────────────────── */
+.page-container {
+  animation: ifFadeInUp 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ─── Refined inputs (.form-input, .form-select, .form-textarea) ──── */
+.form-input,
+.form-select,
+.form-textarea,
+.fi {
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s,
+    background 0.18s !important;
+  font-family: inherit;
+}
+
+.form-input:hover:not(:focus):not(:disabled),
+.form-select:hover:not(:focus):not(:disabled),
+.form-textarea:hover:not(:focus):not(:disabled),
+.fi:hover:not(:focus):not(:disabled) {
+  border-color: var(--brand-300) !important;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus,
+.fi:focus {
+  border-color: var(--brand-500) !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12) !important;
+  outline: none !important;
+}
+
+/* ─── Floating label hint on filled inputs (subtle) ─────────────────── */
+.form-input:not(:placeholder-shown),
+.form-textarea:not(:placeholder-shown) {
+  background: var(--surface-1);
+}
+
+/* ─── Buttons: micro lift on hover ─────────────────────────────────── */
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-icon-sm {
+  transition: transform 0.12s, box-shadow 0.18s, background 0.18s, color 0.15s, border-color 0.15s !important;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.25);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* ─── Cards subtle hover lift ──────────────────────────────────────── */
+.program-card,
+.kpi-card,
+.adv-card {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.25s !important;
+}
+
+.program-card:hover,
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+}
+
+/* ─── Topnav links: sliding underline ──────────────────────────────── */
+.topnav-link {
+  position: relative;
+  transition: color 0.18s !important;
+}
+
+.topnav-link::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 0;
+  height: 2px;
+  background: var(--brand-500);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.topnav-link:hover::after,
+.topnav-link.active::after {
+  width: 70%;
+}
+
+/* ─── Modal backdrop blur ──────────────────────────────────────────── */
+.modal-overlay {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: ifFadeInUp 0.18s ease-out;
+}
+
+.modal-content {
+  animation: ifFadeInUp 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ─── Skeleton/loading shimmer (use class .skel) ──────────────────── */
+.skel {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    var(--surface-3) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: ifShimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+
+/* ─── Table rows: subtle fade-in stagger ───────────────────────────── */
+.participants-table tbody tr,
+.sh-table-row {
+  transition: background 0.15s, transform 0.12s;
+}
+
+.participants-table tbody tr:hover,
+.sh-table-row:hover {
+  background: var(--brand-100) !important;
+}
+
+/* ─── Empty state animation ────────────────────────────────────────── */
+.empty-state {
+  animation: ifFadeInUp 0.4s ease-out;
+}
+
+/* ─── Generic checkbox refinement ──────────────────────────────────── */
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-500);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+
+input[type="checkbox"]:hover {
+  transform: scale(1.08);
+}
+
+/* ─── Number input arrows hidden in WebKit ─────────────────────────── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ─── Selection color ──────────────────────────────────────────────── */
+::selection {
+  background: var(--brand-100);
+  color: var(--brand-700);
+}
+
+/* ─── Scrollbar refinement ─────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 6px;
+  border: 2px solid var(--surface-1);
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-300);
+}
+
+/* ─── Badge / chip pulse on new ────────────────────────────────────── */
+.chip-new,
+.badge-new {
+  animation: ifPulse 2s ease-in-out infinite;
+}

@@ -14,7 +14,7 @@ const LABEL_CONFIG: Record<string, { color: string; bg: string; text: string }> 
 const DEFAULT_CONFIG = { color: "#94a3b8", bg: "#f8fafc", text: "—" };
 
 export function EffectSizeCard({ d, label }: Props) {
-  const cfg = (label && LABEL_CONFIG[label]) ?? DEFAULT_CONFIG;
+  const cfg = (label ? LABEL_CONFIG[label] : undefined) ?? DEFAULT_CONFIG;
 
   return (
     <div className="stat-evidence-card">
@@ -25,7 +25,18 @@ export function EffectSizeCard({ d, label }: Props) {
       <span className="stat-evidence-badge" style={{ color: cfg.color, background: cfg.bg }}>
         {cfg.text}
       </span>
-      <div className="stat-evidence-hint">Cohen's dz (1988)</div>
+      <div className="stat-evidence-hint">Cohen's dz — mesura la magnitud del canvi</div>
+      <div className="stat-evidence-plain">
+        {d === null || d === undefined
+          ? "Sense dades suficients per calcular."
+          : Math.abs(d) < 0.2
+          ? "El canvi observat és molt petit."
+          : Math.abs(d) < 0.5
+          ? "Hi ha una millora petita però real."
+          : Math.abs(d) < 0.8
+          ? "La millora és moderada i rellevant."
+          : "La millora és gran i molt significativa."}
+      </div>
     </div>
   );
 }

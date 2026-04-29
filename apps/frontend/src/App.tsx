@@ -12,6 +12,9 @@ import PlansPage from "./pages/coordinator/PlansPage";
 import UsersRolesPage from "./pages/coordinator/UsersRolesPage";
 import ImpactPortalPage from "./pages/donor/ImpactPortal";
 import SessionLoggerPage from "./pages/professional/SessionLogger";
+import ProgramsPage from "./pages/coordinator/ProgramsPage";
+import SessionsHistoryPage from "./pages/coordinator/SessionsHistoryPage";
+import AdvancedAnalyticsPage from "./pages/coordinator/AdvancedAnalyticsPage";
 import { useAuthStore } from "./stores/authStore";
 
 function ProtectedRoute({
@@ -118,6 +121,36 @@ export default function App() {
           <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
             <AppShell>
               <ParticipantProfile />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/programs"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <AppShell>
+              <ProgramsPage />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/sessions"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
+            <AppShell>
+              <SessionsHistoryPage />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/advanced"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <AppShell>
+              <AdvancedAnalyticsPage />
             </AppShell>
           </ProtectedRoute>
         }

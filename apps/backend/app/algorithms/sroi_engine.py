@@ -9,13 +9,17 @@ from __future__ import annotations
 
 _DEFAULT_PROXIES = {
     # €/month reduction in private tutoring per participant improving 25 IPI pts
-    "academic_improvement_eur_per_participant_month": 50.0,
+    # Catalan market rate for group tutoring/reforç escolar: €65/month (2024)
+    "academic_improvement_eur_per_participant_month": 65.0,
     # €/year social services cost avoided per high-risk participant
-    "exclusion_risk_eur_per_participant_year": 2400.0,
+    # Source: INE 2023 / Departament de Drets Socials Generalitat de Catalunya
+    "exclusion_risk_eur_per_participant_year": 2800.0,
     # €/participant for integration employment value
-    "integration_eur_per_participant": 800.0,
-    # €/hour educational supervision substituted
-    "attendance_eur_per_hour": 15.0,
+    # Source: Fundació Jaume Bofill 2023, updated from 800 → 1200
+    "integration_eur_per_participant": 1200.0,
+    # €/hour educational supervision per PARTICIPANT (professional group support)
+    # Catalan socio-educational professional rate: €18/h per participant-hour
+    "attendance_eur_per_hour": 18.0,
 }
 
 _CORRECTION_FACTORS = {
@@ -81,8 +85,11 @@ def _compute_sroi_breakdown(
         * pct_integration_gain
         * proxies["integration_eur_per_participant"]
     )
+    # Value = total participant-hours of professional educational support received.
+    # Each group session benefits ALL n_participants simultaneously.
     attendance_raw = (
-        sessions
+        n_participants
+        * sessions
         * avg_duration_h
         * proxies["attendance_eur_per_hour"]
     )
