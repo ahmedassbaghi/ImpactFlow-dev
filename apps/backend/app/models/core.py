@@ -71,6 +71,19 @@ class Participant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ProgramEnrollment(Base):
+    """Explicit many-to-many: participant enrolled in a program."""
+    __tablename__ = "program_enrollments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    enrolled_at: Mapped[date] = mapped_column(Date, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    __table_args__ = (UniqueConstraint("program_id", "participant_id"),)
+
+
 class BaselineAssessment(Base):
     __tablename__ = "baseline_assessments"
 

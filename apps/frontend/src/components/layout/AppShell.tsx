@@ -1,125 +1,184 @@
+import {
+  Atom,
+  BarChart3,
+  BookOpen,
+  Command,
+  FileText,
+  FolderKanban,
+  Heart,
+  History,
+  LayoutDashboard,
+  LogOut,
+  Moon,
+  Settings,
+  Sun,
+  Target,
+  Users,
+  Zap,
+} from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
+import { useThemeStore } from "../../stores/themeStore";
+import { QuickLoggerFAB } from "../sessions/QuickLoggerFAB";
+import { CommandPalette } from "../common/CommandPalette";
+import { NotificationBell } from "../common/NotificationBell";
+import { PageTransition } from "../common/PageTransition";
+import { avatarStyle, avatarInitial } from "../../utils/hueAvatar";
+
+const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
+  admin:        { label: "Admin",        color: "#7c3aed", bg: "#ede9fe" },
+  coordinator:  { label: "Coordinadora", color: "#2563eb", bg: "#dbeafe" },
+  professional: { label: "Professional", color: "#059669", bg: "#d1fae5" },
+  donor:        { label: "Donant",       color: "#d97706", bg: "#fef3c7" },
+  viewer:       { label: "Visitant",     color: "#64748b", bg: "#f1f5f9" },
+};
+
+const NAV_LINKS: Record<string, { to: string; label: string; icon: React.ElementType }[]> = {
+  professional: [
+    { to: "/professional/session-logger", label: "Registre",         icon: Zap },
+    { to: "/coordinator/sessions",        label: "Historial",        icon: History },
+    { to: "/coordinator/participants",    label: "Participants",      icon: Users },
+    { to: "/coordinator/micro-goals",    label: "Micro-objectius",   icon: Target },
+  ],
+  coordinator: [
+    { to: "/coordinator/dashboard",          label: "Dashboard",          icon: LayoutDashboard },
+    { to: "/coordinator/participants",       label: "Participants",        icon: Users },
+    { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
+    { to: "/coordinator/sessions",          label: "Historial",           icon: History },
+    { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
+    { to: "/professional/session-logger",    label: "Registre",            icon: Zap },
+    { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
+    { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
+    { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
+  ],
+  admin: [
+    { to: "/coordinator/dashboard",          label: "Dashboard",          icon: LayoutDashboard },
+    { to: "/coordinator/participants",       label: "Participants",        icon: Users },
+    { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
+    { to: "/coordinator/sessions",          label: "Historial",           icon: History },
+    { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
+    { to: "/professional/session-logger",    label: "Registre",            icon: Zap },
+    { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
+    { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
+    { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
+    { to: "/admin/control-center",           label: "Admin",               icon: BookOpen },
+  ],
+  donor: [
+    { to: "/donor/impact-portal", label: "Portal d'impacte", icon: Heart },
+  ],
+  viewer: [
+    { to: "/donor/impact-portal", label: "Portal d'impacte", icon: Heart },
+  ],
+};
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const role = useAuthStore((s) => s.role);
+  const role   = useAuthStore((s) => s.role)   ?? "viewer";
   const userId = useAuthStore((s) => s.userId);
-  const clear = useAuthStore((s) => s.clear);
-  const navigate = useNavigate();
-  const location = useLocation();
+  const clear  = useAuthStore((s) => s.clear);
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const theme  = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggle);
 
-  const logout = () => {
-    clear();
-    navigate("/login");
-  };
+  const logout = () => { clear(); navigate("/login"); };
 
-  const links =
-    role === "professional"
-      ? [
-          { to: "/professional/session-logger", label: "Registro de sesión" },
-          { to: "/coordinator/micro-goals", label: "Microobjetivos" },
-          { to: "/coordinator/participants", label: "Participantes" },
-        ]
-      : role === "admin"
-        ? [
-            { to: "/coordinator/dashboard", label: "Dashboard" },
-            { to: "/coordinator/reports", label: "Informes" },
-            { to: "/coordinator/micro-goals", label: "Microobjetivos" },
-            { to: "/coordinator/participants", label: "Participantes" },
-            { to: "/professional/session-logger", label: "Quick Session Logger" },
-          ]
-        : role === "coordinator"
-          ? [
-              { to: "/coordinator/dashboard", label: "Dashboard" },
-              { to: "/coordinator/reports", label: "Informes" },
-              { to: "/coordinator/micro-goals", label: "Microobjetivos" },
-              { to: "/coordinator/participants", label: "Participantes" },
-              { to: "/professional/session-logger", label: "Quick Session Logger" },
-            ]
-          : role === "donor" || role === "viewer"
-            ? [
-                { to: "/donor/impact-portal", label: "Portal donante" },
-              ]
-            : [
-                { to: "/donor/impact-portal", label: "Portal donante" },
-              ]
-      ;
-
-  const quickActions =
-    role === "professional"
-      ? [
-          { to: "/professional/session-logger", label: "Registrar sesión", primary: true },
-          { to: "/coordinator/participants", label: "Ver participantes" },
-          { to: "/coordinator/participants", label: "Seguimiento de participantes" },
-        ]
-      : role === "admin" || role === "coordinator"
-        ? [
-            { to: "/professional/session-logger", label: "Registrar sesión", primary: true },
-            { to: "/coordinator/micro-goals", label: "Microobjetivos" },
-            { to: "/coordinator/participants", label: "Gestión participantes" },
-            { to: "/coordinator/dashboard", label: "Dashboard" },
-          ]
-        : [
-            { to: "/donor/impact-portal", label: "Portal donante", primary: true },
-            { to: "/donor/impact-portal", label: "Portal donante" },
-          ];
-
-  const roadmapItems = [
-    { title: "Gestión avanzada de usuarios", detail: "Permisos granulares, trazabilidad y flujos de aprobación." },
-    { title: "Planificación operativa", detail: "Calendario de sesiones, capacidad y carga de profesionales." },
-    { title: "Portal de financiación", detail: "Objetivos de impacto, reporting externo y seguimiento de compromisos." },
-  ];
+  const links    = NAV_LINKS[role]  ?? NAV_LINKS.viewer;
+  const roleMeta = ROLE_META[role]  ?? ROLE_META.viewer;
+  const avatarKey = userId ?? role;
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">ImpactFlow</div>
-        <p className="sidebar-subtitle">De l'activitat a l'impacte</p>
-        <div className="sidebar-quick">
-          <div className="muted" style={{ color: "#cbd5e1" }}>
-            Acceso clave
+      {/* ── Top navigation ── */}
+      <header className="topnav">
+        {/* Brand */}
+        <Link to="/" className="topnav-brand">
+          <div className="topnav-brand-icon">
+            <BarChart3 size={16} strokeWidth={2.5} />
           </div>
-          <Link
-            to={quickActions[0].to}
-            className={`sidebar-link sidebar-link-quick ${location.pathname === quickActions[0].to ? "active" : ""}`}
-          >
-            {quickActions[0].label}
-          </Link>
-        </div>
-        <nav className="sidebar-nav">
-          {links.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={`sidebar-link ${location.pathname === item.to ? "active" : ""}`}
-            >
-              {item.label}
-            </Link>
-          ))}
+          <span className="topnav-brand-name">ImpactFlow</span>
+        </Link>
+
+        {/* Nav links */}
+        <nav className="topnav-nav">
+          {links.map(({ to, label, icon: Icon }) => {
+            const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={`topnav-link${isActive ? " active" : ""}`}
+              >
+                <Icon size={14} strokeWidth={2} />
+                {label}
+              </Link>
+            );
+          })}
         </nav>
-        <div className="sidebar-roadmap">
-          <div className="sidebar-roadmap-title">Por implementar</div>
-          <div className="sidebar-roadmap-list">
-            {roadmapItems.map((item) => (
-              <div key={item.title} className="sidebar-roadmap-item">
-                <strong>{item.title}</strong>
-                <span>{item.detail}</span>
-              </div>
-            ))}
+
+        {/* Right side */}
+        <div className="topnav-right">
+          {/* Command palette opener */}
+          <button
+            className="topnav-cmd"
+            onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))}
+            title="Command palette (Ctrl+K)"
+          >
+            <Command size={13} strokeWidth={2.2} />
+            <span className="topnav-cmd-text">Cerca…</span>
+            <kbd className="topnav-cmd-kbd">⌘K</kbd>
+          </button>
+
+          {/* Theme toggle */}
+          <button
+            className="topnav-icon-btn"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Mode clar" : "Mode fosc"}
+            aria-label="Canviar tema"
+          >
+            {theme === "dark" ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
+          </button>
+
+          {/* Notifications */}
+          <NotificationBell />
+
+          {/* Role badge */}
+          <span
+            className="topnav-role-badge"
+            style={{ background: roleMeta.bg, color: roleMeta.color }}
+          >
+            {roleMeta.label}
+          </span>
+
+          {/* Avatar (hue-based) */}
+          <div
+            className="topnav-avatar"
+            style={avatarStyle(avatarKey)}
+            title={`ID ${userId?.slice(0, 8) ?? "—"}`}
+          >
+            {avatarInitial(userId ?? role)}
           </div>
+
+          <button className="topnav-logout" onClick={logout} title="Tancar sessió">
+            <LogOut size={14} strokeWidth={2} />
+            <span>Sortir</span>
+          </button>
         </div>
-        <div className="sidebar-footer">
-          <div className="muted" style={{ color: "#94a3b8" }}>
-            Rol: {role ?? "invitado"} · Usuario: {userId ?? "-"}
-          </div>
-          <button onClick={logout}>Cerrar sesión</button>
-        </div>
-      </aside>
+      </header>
+
+      {/* ── Page content ── */}
       <div className="shell-content">
         <div className="container">
-          <main>{children}</main>
+          <main>
+            <PageTransition>{children}</PageTransition>
+          </main>
         </div>
       </div>
+
+      {/* ── Floating quick-logger ── */}
+      <QuickLoggerFAB />
+
+      {/* ── Command Palette ── */}
+      <CommandPalette />
     </div>
   );
 }

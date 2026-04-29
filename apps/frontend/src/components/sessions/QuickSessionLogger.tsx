@@ -1,479 +1,844 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import React, { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Activity, BookOpen, Brain, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList,
+  Cloud, CloudRain, Compass, Globe, Meh, Search, Sparkles, Sun, UserCheck,
+  Users2, X, Zap, Star,
+} from "lucide-react";
 import { listMicroGoals } from "../../api/microGoals";
-import { listParticipants } from "../../api/participants";
+import { getEnrolledParticipants, listParticipants, type Participant } from "../../api/participants";
 import { listPrograms } from "../../api/programs";
 import { createSession } from "../../api/sessions";
 import { useLocalDraft } from "../../hooks/useLocalDraft";
+import { OutcomesStar } from "./OutcomesStar";
+import { LiveReactions } from "./LiveReactions";
+import {
+  deriveScoreFromEvents, noteFromStarAnchors, noteFromEvents,
+  type DimKey as DataDimKey, type InputMode, type ReactionEvent,
+} from "./inputModeData";
 
-const moodOptions = [
-  { value: "very_low", label: "Muy baja" },
-  { value: "low", label: "Baja" },
-  { value: "neutral", label: "Neutral" },
-  { value: "good", label: "Buena" },
-  { value: "excellent", label: "Excelente" },
-];
-
-const sessionTypeOptions = [
-  { value: "group", label: "Grupal" },
-  { value: "individual", label: "Individual" },
-  { value: "workshop", label: "Taller" },
-  { value: "follow_up", label: "Seguimiento" },
-];
-
-const attendanceOptions = [
-  { value: "present", label: "Asistencia completa" },
-  { value: "late", label: "Llegó tarde" },
-  { value: "absent_justified", label: "Ausencia justificada" },
-  { value: "absent_unjustified", label: "Ausencia injustificada" },
-];
-
-const scoreFields = [
-  { key: "academicScore", label: "Académico" },
-  { key: "cognitiveScore", label: "Cognitivo" },
-  { key: "socialScore", label: "Social" },
-  { key: "integrationScore", label: "Integración" },
+const DIMS = [
+  { key: "academicScore",    label: "Acadèmic",    Icon: BookOpen,  color: "var(--dim-academic)" },
+  { key: "cognitiveScore",   label: "Cognitiu",    Icon: Brain,     color: "var(--dim-cognitive)" },
+  { key: "socialScore",      label: "Social",      Icon: Users2,    color: "var(--dim-social)" },
+  { key: "integrationScore", label: "Integració",  Icon: Globe,     color: "var(--dim-integration)" },
 ] as const;
-const scoreValues = [1, 2, 3, 4, 5] as const;
 
-const quickSessionDefaults = {
-  programId: "",
-  programInput: "",
-  participantId: "",
-  participantInput: "",
-  sessionType: "group",
-  durationMinutes: "45",
-  note: "",
-  qualitativeNote: "",
-  attendanceStatus: "present",
-  moodIndicator: "neutral",
-  academicScore: "",
-  cognitiveScore: "",
-  socialScore: "",
-  integrationScore: "",
-};
+const MOOD_OPTIONS = [
+  { value: "very_low",  Icon: CloudRain, label: "Molt baixa",  color: "var(--risk-high)" },
+  { value: "low",       Icon: Cloud,     label: "Baixa",       color: "var(--risk-medium)" },
+  { value: "neutral",   Icon: Meh,       label: "Neutral",     color: "var(--text-muted)" },
+  { value: "good",      Icon: Sun,       label: "Bona",        color: "var(--dim-integration)" },
+  { value: "excellent", Icon: Zap,       label: "Excel·lent",  color: "var(--brand-500)" },
+];
 
-function toOptionalNumber(value: string): number | undefined {
-  if (!value.trim()) return undefined;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
+const SESSION_TYPES = [
+  { value: "group",      label: "Grupal" },
+  { value: "individual", label: "Individual" },
+  { value: "workshop",   label: "Taller" },
+  { value: "follow_up",  label: "Seguiment" },
+];
+
+const ATTENDANCE_OPTIONS = [
+  { value: "present",             label: "Present",        color: "var(--risk-low)" },
+  { value: "late",                label: "Tard",           color: "var(--risk-medium)" },
+  { value: "absent_justified",    label: "Absent (just.)", color: "var(--text-muted)" },
+  { value: "absent_unjustified",  label: "Absent",         color: "var(--risk-high)" },
+];
+
+const QUICK_TAGS = [
+  { label: "Atenció sostinguda", icon: "🎯", insert: "Ha mostrat atenció sostinguda durant l'activitat. " },
+  { label: "Iniciativa", icon: "🚀", insert: "Ha pres la iniciativa per resoldre la tasca. " },
+  { label: "Cooperació", icon: "🤝", insert: "Ha cooperat bé amb els companys. " },
+  { label: "Frustració", icon: "😤", insert: "S'ha frustrat davant la dificultat. " },
+  { label: "Millora notable", icon: "📈", insert: "Mostra una millora notable respecte la sessió anterior. " },
+  { label: "Necessita reforç", icon: "🔁", insert: "Necessita reforç en aquest contingut. " },
+];
+
+const STAR_LABELS = ["", "Molt baix", "Baix", "Regular", "Bé", "Excel·lent"];
+
+type DimKey = DataDimKey;
+
+interface ObsState {
+  academicScore: number; cognitiveScore: number; socialScore: number; integrationScore: number;
+  qualitativeNote: string; mood: string; attendance: string; microGoalIds: string[];
+  /** Reaction event log (only used in "reactions" input mode). */
+  events: ReactionEvent[];
+  /** Whether the user has typed in the textarea after auto-generation
+   *  from anchors / reactions; protects manual edits from being clobbered. */
+  noteEdited: boolean;
 }
 
-function normalizeText(value: string): string {
-  return value.trim().toLowerCase();
+const defaultObs = (): ObsState => ({
+  academicScore: 0, cognitiveScore: 0, socialScore: 0, integrationScore: 0,
+  qualitativeNote: "", mood: "neutral", attendance: "present", microGoalIds: [],
+  events: [],
+  noteEdited: false,
+});
+
+interface FormState {
+  programId: string; sessionType: string; sessionDate: string;
+  durationMinutes: string; notes: string; observations: Record<string, ObsState>;
+  /** Per-session input paradigm; persisted so refresh keeps the choice. */
+  inputMode: InputMode;
 }
 
-export function QuickSessionLogger() {
-  const { value: draft, setValue: setDraft, clear } = useLocalDraft<{
-    programId: string;
-    programInput: string;
-    participantId: string;
-    participantInput: string;
-    sessionType: string;
-    durationMinutes: string;
-    note: string;
-    qualitativeNote: string;
-    attendanceStatus: string;
-    moodIndicator: string;
-    academicScore: string;
-    cognitiveScore: string;
-    socialScore: string;
-    integrationScore: string;
-  }>("if_quick_session_draft", quickSessionDefaults);
-  const safeDraft = { ...quickSessionDefaults, ...draft };
+const defaultForm = (): FormState => ({
+  programId: "", sessionType: "group",
+  sessionDate: new Date().toISOString().slice(0, 10),
+  durationMinutes: "45", notes: "", observations: {},
+  inputMode: "stars",
+});
+
+const INPUT_MODE_OPTIONS: { value: InputMode; label: string; icon: React.ElementType; hint: string }[] = [
+  { value: "stars",     label: "Estrelles",      icon: Star,    hint: "Ràpid · 1-5 ★ per dimensió"  },
+  { value: "star",      label: "Estrella radial", icon: Compass, hint: "Outcomes Star · descripcions ancorades" },
+  { value: "reactions", label: "Reaccions",      icon: Activity,hint: "ClassDojo · xips en directe"  },
+];
+
+function StarRating({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="ql-stars">
+      {[1, 2, 3, 4, 5].map((star) => {
+        const filled = star <= (hover || value);
+        return (
+          <motion.button
+            key={star}
+            type="button"
+            title={STAR_LABELS[star]}
+            onMouseEnter={() => setHover(star)}
+            onMouseLeave={() => setHover(0)}
+            onClick={() => onChange(value === star ? 0 : star)}
+            whileTap={{ scale: 0.85 }}
+            whileHover={{ scale: 1.12 }}
+            className="ql-star-btn"
+            style={{ color: filled ? color : "var(--surface-3)" }}
+          >
+            <Star size={20} fill={filled ? color : "transparent"} strokeWidth={1.8} />
+          </motion.button>
+        );
+      })}
+      <span className="ql-star-label">{(hover || value) ? STAR_LABELS[hover || value] : ""}</span>
+    </div>
+  );
+}
+
+function ParticipantAvatar({ name, size = 36 }: { name: string; size?: number }) {
+  const hash = name.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const hue = hash % 360;
+  return (
+    <div
+      className="ql-avatar"
+      style={{
+        width: size, height: size, fontSize: Math.round(size * 0.42),
+        background: `hsl(${hue}, 60%, 92%)`,
+        color: `hsl(${hue}, 65%, 38%)`,
+      }}
+    >
+      {(name?.[0] ?? "?").toUpperCase()}
+    </div>
+  );
+}
+
+export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () => void; compact?: boolean }) {
+  const [_rawForm, setForm, clearForm] = useLocalDraft<FormState>("quick-session-logger-v4", defaultForm());
+  const form: FormState = { ...defaultForm(), ..._rawForm, observations: _rawForm.observations ?? {} };
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [search, setSearch] = useState("");
   const [saved, setSaved] = useState(false);
-  const [validationMessage, setValidationMessage] = useState("");
-  const [completedGoalIds, setCompletedGoalIds] = useState<string[]>([]);
+  const [saveError, setSaveError] = useState("");
+  const qc = useQueryClient();
 
-  const { data: participants, isLoading: participantsLoading, isError: participantsError } = useQuery({
-    queryKey: ["participants", "quick-logger"],
-    queryFn: () => listParticipants(),
+  const programsQ = useQuery({ queryKey: ["programs"], queryFn: () => listPrograms() });
+  const participantsQ = useQuery({
+    queryKey: ["participants", "logger", form.programId],
+    queryFn: () => form.programId ? getEnrolledParticipants(form.programId) : listParticipants(),
+  });
+  const goalsQ = useQuery({
+    queryKey: ["micro-goals", form.programId],
+    queryFn: () => listMicroGoals({ programId: form.programId }),
+    enabled: !!form.programId,
   });
 
-  const { data: programs, isLoading: programsLoading, isError: programsError } = useQuery({
-    queryKey: ["programs", "quick-logger"],
-    queryFn: () => listPrograms(true),
-  });
+  const programs = programsQ.data ?? [];
+  const participants = participantsQ.data ?? [];
+  const goals = goalsQ.data ?? [];
 
-  const programChoices = useMemo(
-    () =>
-      (programs ?? []).map((program) => ({
-        id: program.id,
-        label: `${program.name} · ${program.id.slice(0, 8)}`,
-        search: `${program.name} ${program.id}`.toLowerCase(),
-      })),
-    [programs]
-  );
+  // Auto-select program if only one
+  useEffect(() => {
+    if (!form.programId && programs.length === 1) {
+      setForm((prev) => ({ ...prev, programId: programs[0].id }));
+    }
+  }, [programs.length]); // eslint-disable-line
 
-  const participantChoices = useMemo(
-    () =>
-      (participants ?? []).map((participant) => ({
-        id: participant.id,
-        label: `${participant.first_name} · ${participant.code}`,
-        search: `${participant.first_name} ${participant.code} ${participant.id}`.toLowerCase(),
-      })),
-    [participants]
-  );
-
-  const resolveChoice = (rawValue: string, choices: Array<{ id: string; label: string; search: string }>) => {
-    const query = normalizeText(rawValue);
-    if (!query) return null;
-
-    const exact = choices.find((item) => normalizeText(item.id) === query || normalizeText(item.label) === query);
-    if (exact) return exact;
-
-    const partial = choices.find((item) => item.search.includes(query));
-    return partial ?? null;
+  const activeParticipantId = selectedParticipants[activeIdx] ?? "";
+  // Merge with defaultObs so legacy localStorage entries gain new fields
+  // (events, noteEdited) without runtime errors.
+  const activeObs: ObsState = {
+    ...defaultObs(),
+    ...((form.observations ?? {})[activeParticipantId] ?? {}),
   };
 
-  const filteredParticipants = useMemo(() => {
-    const source = participantChoices;
-    if (!safeDraft.participantInput.trim()) return source.slice(0, 20);
-    const query = normalizeText(safeDraft.participantInput);
-    return source.filter((item) => item.search.includes(query)).slice(0, 20);
-  }, [participantChoices, safeDraft.participantInput]);
+  const filteredAvailable = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return participants.filter(
+      (p) =>
+        !selectedParticipants.includes(p.id) &&
+        (!q || p.first_name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+    );
+  }, [participants, selectedParticipants, search]);
 
-  const filteredPrograms = useMemo(() => {
-    const source = programChoices;
-    if (!safeDraft.programInput.trim()) return source.slice(0, 20);
-    const query = normalizeText(safeDraft.programInput);
-    return source.filter((item) => item.search.includes(query)).slice(0, 20);
-  }, [programChoices, safeDraft.programInput]);
+  const setObs = (pid: string, key: keyof ObsState, value: unknown) => {
+    setForm((prev) => ({
+      ...prev,
+      observations: {
+        ...(prev.observations ?? {}),
+        [pid]: { ...defaultObs(), ...((prev.observations ?? {})[pid] ?? {}), [key]: value },
+      },
+    }));
+  };
 
-  const selectedProgram = useMemo(
-    () => programChoices.find((item) => item.id === safeDraft.programId) ?? null,
-    [programChoices, safeDraft.programId]
-  );
-
-  const selectedParticipant = useMemo(
-    () => participantChoices.find((item) => item.id === safeDraft.participantId) ?? null,
-    [participantChoices, safeDraft.participantId]
-  );
-
-  const { data: participantGoals } = useQuery({
-    queryKey: ["micro-goals", "quick-logger", selectedProgram?.id],
-    queryFn: () =>
-      listMicroGoals({
-        programId: selectedProgram?.id,
-        activeOnly: true,
-      }),
-    enabled: !!selectedProgram?.id,
-  });
-
-  const hasAnyScore = useMemo(
-    () =>
-      [safeDraft.academicScore, safeDraft.cognitiveScore, safeDraft.socialScore, safeDraft.integrationScore].some(
-        (v) => Number(v) > 0
-      ),
-    [safeDraft]
-  );
-
-  const mutation = useMutation({
-    mutationFn: createSession,
-    onSuccess: () => {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1800);
-      setCompletedGoalIds([]);
-      clear();
-      setValidationMessage("");
-    },
-  });
-
-  const submit = () => {
-    const resolvedProgram = resolveChoice(safeDraft.programInput, programChoices);
-    const resolvedParticipant = resolveChoice(safeDraft.participantInput, participantChoices);
-
-    if (!resolvedProgram) {
-      setValidationMessage("Selecciona o escribe el ID del programa antes de guardar.");
-      return;
-    }
-    if (!resolvedParticipant) {
-      setValidationMessage("Selecciona un participante para continuar.");
-      return;
-    }
-
-    setValidationMessage("");
-    mutation.mutate({
-      program_id: resolvedProgram.id,
-      session_date: new Date().toISOString().slice(0, 10),
-      session_type: safeDraft.sessionType,
-      duration_minutes: toOptionalNumber(safeDraft.durationMinutes),
-      notes: safeDraft.note || undefined,
-      observations: [
-        {
-          participant_id: resolvedParticipant.id,
-          academic_score: toOptionalNumber(safeDraft.academicScore),
-          cognitive_score: toOptionalNumber(safeDraft.cognitiveScore),
-          social_score: toOptionalNumber(safeDraft.socialScore),
-          integration_score: toOptionalNumber(safeDraft.integrationScore),
-          qualitative_note: safeDraft.qualitativeNote || undefined,
-          mood_indicator: safeDraft.moodIndicator,
-          attendance_status: safeDraft.attendanceStatus,
+  /** Mode-aware setter for the qualitative note (marks noteEdited so the
+   *  auto-generated text from anchors/reactions doesn't overwrite it). */
+  const handleNoteChange = (pid: string, text: string) => {
+    setForm((prev) => ({
+      ...prev,
+      observations: {
+        ...(prev.observations ?? {}),
+        [pid]: {
+          ...defaultObs(),
+          ...((prev.observations ?? {})[pid] ?? {}),
+          qualitativeNote: text,
+          noteEdited: true,
         },
-      ],
-      micro_goal_completions: completedGoalIds.map((goalId) => ({ goal_id: goalId })),
+      },
+    }));
+  };
+
+  /** Apply event-log change to the active participant in "reactions" mode.
+   *  Recomputes the four 1-5 dimension scores so the IPI-bound payload
+   *  stays in sync with the live tape. */
+  const handleEventsChange = (pid: string, events: ReactionEvent[]) => {
+    const academic    = deriveScoreFromEvents("academicScore",    events);
+    const cognitive   = deriveScoreFromEvents("cognitiveScore",   events);
+    const social      = deriveScoreFromEvents("socialScore",      events);
+    const integration = deriveScoreFromEvents("integrationScore", events);
+    setForm((prev) => {
+      const prevObs: ObsState = { ...defaultObs(), ...((prev.observations ?? {})[pid] ?? {}) };
+      return {
+        ...prev,
+        observations: {
+          ...(prev.observations ?? {}),
+          [pid]: {
+            ...prevObs,
+            events,
+            academicScore: academic,
+            cognitiveScore: cognitive,
+            socialScore: social,
+            integrationScore: integration,
+          },
+        },
+      };
     });
   };
 
+  /** Apply Outcomes Star anchor selection to the active participant. */
+  const handleStarChange = (pid: string, dim: DimKey, value: number) => {
+    setForm((prev) => ({
+      ...prev,
+      observations: {
+        ...(prev.observations ?? {}),
+        [pid]: { ...defaultObs(), ...((prev.observations ?? {})[pid] ?? {}), [dim]: value },
+      },
+    }));
+  };
+
+  /** Switch input mode for the whole session. Existing scores are kept
+   *  so switching is non-destructive; only the input UI changes. */
+  const handleModeChange = (mode: InputMode) => {
+    setForm((prev) => ({ ...prev, inputMode: mode }));
+  };
+
+  const toggleParticipant = (id: string) => {
+    setSelectedParticipants((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((p) => p !== id);
+        setActiveIdx(Math.min(activeIdx, Math.max(0, next.length - 1)));
+        return next;
+      }
+      const next = [...prev, id];
+      setActiveIdx(next.length - 1);
+      if (!(id in (form.observations ?? {}))) {
+        setForm((prevF) => ({
+          ...prevF,
+          observations: { ...(prevF.observations ?? {}), [id]: defaultObs() },
+        }));
+      }
+      return next;
+    });
+  };
+
+  const insertTag = (text: string) => {
+    if (!activeParticipantId) return;
+    setObs(activeParticipantId, "qualitativeNote", (activeObs.qualitativeNote || "") + text);
+  };
+
+  const handleProgramChange = (programId: string) => {
+    setForm((prev) => ({ ...prev, programId, observations: {} }));
+    setSelectedParticipants([]);
+    setActiveIdx(0);
+    setSearch("");
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!form.programId) throw new Error("Selecciona un programa abans de desar.");
+      const observations = selectedParticipants
+        .map((pid) => {
+          const obs: ObsState = { ...defaultObs(), ...(form.observations[pid] ?? {}) };
+
+          /* ───── Compose qualitative_note depending on input mode ─────
+             We send the same numeric scores in every mode (1-5 per dim
+             → IPI calc unchanged) but enrich the note with structured
+             metadata captured by the alternative input UIs.            */
+          const userText = obs.qualitativeNote.trim();
+          let composedNote = userText;
+          if (form.inputMode === "star") {
+            const anchorText = noteFromStarAnchors({
+              academicScore:    obs.academicScore,
+              cognitiveScore:   obs.cognitiveScore,
+              socialScore:      obs.socialScore,
+              integrationScore: obs.integrationScore,
+            });
+            composedNote = anchorText
+              ? (userText ? `${anchorText}\n\nObservació: ${userText}` : anchorText)
+              : userText;
+          } else if (form.inputMode === "reactions") {
+            const eventText = noteFromEvents(obs.events);
+            composedNote = eventText
+              ? (userText ? `Reaccions registrades — ${eventText}\n\nObservació: ${userText}` : `Reaccions registrades — ${eventText}`)
+              : userText;
+          }
+
+          return {
+            participant_id: pid,
+            academic_score: obs.academicScore || undefined,
+            cognitive_score: obs.cognitiveScore || undefined,
+            social_score: obs.socialScore || undefined,
+            integration_score: obs.integrationScore || undefined,
+            qualitative_note: composedNote || undefined,
+            mood_indicator: obs.mood,
+            attendance_status: obs.attendance,
+            micro_goals_completed: obs.microGoalIds,
+          };
+        })
+        .filter((o) => [o.academic_score, o.cognitive_score, o.social_score, o.integration_score].some((v) => v !== undefined));
+
+      if (observations.length === 0)
+        throw new Error("Cal puntuar almenys una dimensió per a un participant.");
+
+      return createSession({
+        program_id: form.programId,
+        session_type: form.sessionType,
+        session_date: form.sessionDate,
+        duration_minutes: parseInt(form.durationMinutes) || 45,
+        notes: form.notes || undefined,
+        observations,
+      });
+    },
+    onSuccess: () => {
+      setSaved(true);
+      clearForm();
+      setSelectedParticipants([]);
+      setActiveIdx(0);
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["participants"] });
+      setTimeout(() => { setSaved(false); onClose?.(); }, 2000);
+    },
+    onError: (err: Error) => setSaveError(err.message || "Error en guardar la sessió."),
+  });
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (selectedParticipants.length > 0 && form.programId) {
+          setSaveError("");
+          saveMutation.mutate();
+        }
+      }
+      if (e.key === "Escape" && onClose) onClose();
+      if (selectedParticipants.length > 1 && e.altKey) {
+        if (e.key === "ArrowRight") setActiveIdx((i) => Math.min(i + 1, selectedParticipants.length - 1));
+        if (e.key === "ArrowLeft") setActiveIdx((i) => Math.max(i - 1, 0));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedParticipants, form.programId]); // eslint-disable-line
+
+  const scoredCount = selectedParticipants.filter((pid) => {
+    const obs = (form.observations ?? {})[pid];
+    return obs && [obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0);
+  }).length;
+
+  const completionPct = selectedParticipants.length > 0
+    ? Math.round((scoredCount / selectedParticipants.length) * 100)
+    : 0;
+
+  if (saved) {
+    return (
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22 }}
+        className="ql-success"
+      >
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.15, type: "spring", stiffness: 400 }}
+          className="ql-success-icon"
+        >
+          <CheckCircle2 size={48} strokeWidth={1.6} />
+        </motion.div>
+        <div className="ql-success-title">Sessió registrada</div>
+        <div className="ql-success-sub">Les observacions s'han desat correctament.</div>
+      </motion.div>
+    );
+  }
+
   return (
-    <div className="card">
-      <h2>Registro guiado de sesión</h2>
-      <p className="muted">
-        Completa este registro en menos de 2 minutos. El borrador se autoguarda en local.
-      </p>
-      <div className="logger-step-grid" style={{ marginTop: "1rem" }}>
-        <div className="logger-step">
-          <span className="chip">Paso 1</span>
-          <h3>Configura la sesión</h3>
-          <p className="muted">Elige programa, tipo y duración. Todo en menos de 20 segundos.</p>
-          <div className="grid grid-2">
-            <label>
-              Programa
-              <div className="combo-field">
-                <input
-                  list="program-options"
-                  value={safeDraft.programInput}
-                  onChange={(e) => {
-                    const nextInput = e.target.value;
-                    const resolved = resolveChoice(nextInput, programChoices);
-                    setDraft((prev) => ({
-                      ...prev,
-                      programInput: nextInput,
-                      programId: resolved?.id ?? "",
-                    }));
-                  }}
-                  placeholder="Busca por nombre o pega ID"
-                  disabled={programsLoading || programsError}
-                />
-                <datalist id="program-options">
-                  {filteredPrograms.map((item) => (
-                    <option key={item.id} value={item.label}>
-                      {item.id}
-                    </option>
-                  ))}
-                </datalist>
-              </div>
-            </label>
-            <label>
-              Tipo de sesión
-              <select
-                value={safeDraft.sessionType}
-                onChange={(e) => setDraft((prev) => ({ ...prev, sessionType: e.target.value }))}
+    <div className={`ql-shell ${compact ? "ql-shell--compact" : ""}`}>
+      {/* ── Top bar: meta + progress ──────────────────────────────── */}
+      <div className="ql-topbar">
+        <div className="ql-topbar-meta">
+          <select
+            className="ql-meta-input ql-meta-program"
+            value={form.programId}
+            onChange={(e) => handleProgramChange(e.target.value)}
+          >
+            <option value="">— Programa —</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+
+          <div className="ql-meta-pills">
+            {SESSION_TYPES.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                className={`ql-meta-pill ${form.sessionType === t.value ? "active" : ""}`}
+                onClick={() => setForm((prev) => ({ ...prev, sessionType: t.value }))}
               >
-                {sessionTypeOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Duración (minutos)
-              <input
-                type="number"
-                min={10}
-                max={180}
-                step={5}
-                value={safeDraft.durationMinutes}
-                onChange={(e) => setDraft((prev) => ({ ...prev, durationMinutes: e.target.value }))}
-              />
-            </label>
-          </div>
-          {selectedProgram && <p className="combo-selected">Programa seleccionado: {selectedProgram.label}</p>}
-          {programsError && (
-            <p style={{ color: "#dc2626" }}>
-              No se pudieron cargar programas. Puedes pegar un ID exacto para continuar.
-            </p>
-          )}
-        </div>
-
-        <div className="logger-step">
-          <span className="chip">Paso 2</span>
-          <h3>Selecciona participante</h3>
-          <p className="muted">Un solo campo con búsqueda inteligente por nombre, código o ID.</p>
-          <label>
-            Participante
-            <div className="combo-field">
-              <input
-                list="participant-options"
-                value={safeDraft.participantInput}
-                onChange={(e) => {
-                  const nextInput = e.target.value;
-                  const resolved = resolveChoice(nextInput, participantChoices);
-                  setDraft((prev) => ({
-                    ...prev,
-                    participantInput: nextInput,
-                    participantId: resolved?.id ?? "",
-                  }));
-                }}
-                placeholder="Ej: Participant-12 o NRN-2024-012"
-                disabled={participantsLoading || participantsError}
-              />
-              <datalist id="participant-options">
-                {filteredParticipants.map((item) => (
-                  <option key={item.id} value={item.label}>
-                    {item.id}
-                  </option>
-                ))}
-              </datalist>
-            </div>
-          </label>
-          {selectedParticipant && <p className="combo-selected">Participante seleccionado: {selectedParticipant.label}</p>}
-          {participantsError && (
-            <p style={{ color: "#dc2626" }}>
-              No se pudo cargar el listado. Revisa la sesión o vuelve a intentar en unos segundos.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="logger-step-grid" style={{ marginTop: "1rem" }}>
-        <div className="logger-step">
-          <span className="chip">Paso 3</span>
-          <h3>Registra evidencia clave</h3>
-          <p className="muted">Rellena solo lo esencial. El resto es opcional para no bloquear tu trabajo.</p>
-          <div className="grid grid-3">
-            {scoreFields.map((field) => (
-              <label key={field.key}>
-                {field.label}
-                <div className="star-rating">
-                  {scoreValues.map((score) => {
-                    const currentValue = Number(safeDraft[field.key] || 0);
-                    const active = currentValue >= score;
-                    return (
-                      <button
-                        key={`${field.key}-${score}`}
-                        type="button"
-                        className={`star-btn ${active ? "active" : ""}`}
-                        onClick={() =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [field.key]: String(score),
-                          }))
-                        }
-                        aria-label={`${field.label}: ${score} estrellas`}
-                        title={`${score}/5`}
-                      >
-                        ★
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="star-clear-btn"
-                    onClick={() =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [field.key]: "",
-                      }))
-                    }
-                  >
-                    Limpiar
-                  </button>
-                </div>
-              </label>
+                {t.label}
+              </button>
             ))}
           </div>
-          <div className="grid grid-2" style={{ marginTop: "1rem" }}>
-            <label>
-              Nota de sesión general
-              <textarea
-                value={safeDraft.note}
-                onChange={(e) => setDraft((prev) => ({ ...prev, note: e.target.value }))}
-                rows={3}
-                placeholder="Resumen breve de lo trabajado hoy"
-              />
-            </label>
-            <label>
-              Evidencia cualitativa
-              <textarea
-                value={safeDraft.qualitativeNote}
-                onChange={(e) => setDraft((prev) => ({ ...prev, qualitativeNote: e.target.value }))}
-                rows={3}
-                placeholder="Cambio observable o situación relevante"
-              />
-            </label>
+
+          <input
+            type="date"
+            className="ql-meta-input ql-meta-date"
+            value={form.sessionDate}
+            onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
+          />
+
+          <div className="ql-meta-duration">
+            <input
+              type="number"
+              min={5} max={240}
+              className="ql-meta-input ql-meta-mins"
+              value={form.durationMinutes}
+              onChange={(e) => setForm((prev) => ({ ...prev, durationMinutes: e.target.value }))}
+            />
+            <span className="ql-meta-mins-label">min</span>
           </div>
-          <div className="grid grid-2" style={{ marginTop: "1rem" }}>
-            <label>
-              Estado de ánimo
-              <select
-                value={safeDraft.moodIndicator}
-                onChange={(e) => setDraft((prev) => ({ ...prev, moodIndicator: e.target.value }))}
+
+          {/* ── Input mode segmented toggle ─────────────────────────── */}
+          <div className="ql-mode-toggle" role="tablist" aria-label="Mode d'entrada">
+            {INPUT_MODE_OPTIONS.map(({ value, label, icon: Icon, hint }) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={form.inputMode === value}
+                className={`ql-mode-btn ${form.inputMode === value ? "active" : ""}`}
+                onClick={() => handleModeChange(value)}
+                title={hint}
               >
-                {moodOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Asistencia
-              <select
-                value={safeDraft.attendanceStatus}
-                onChange={(e) => setDraft((prev) => ({ ...prev, attendanceStatus: e.target.value }))}
-              >
-                {attendanceOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <Icon size={13} strokeWidth={2.2} />
+                <span>{label}</span>
+              </button>
+            ))}
           </div>
-          <div style={{ marginTop: "1rem" }}>
-            <div className="dash-row" style={{ borderBottom: "none", padding: 0 }}>
-              <strong>Microobjetivos logrados en esta sesión</strong>
-              <span className="muted">Marca los objetivos con evidencia de logro hoy.</span>
+        </div>
+
+        {selectedParticipants.length > 0 && (
+          <div className="ql-progress-block">
+            <div className="ql-progress-label">
+              <strong>{scoredCount}</strong>/{selectedParticipants.length} puntuats
             </div>
-            <div className="grid" style={{ marginTop: "0.5rem" }}>
-              {(participantGoals ?? []).map((goal) => (
-                <label key={goal.id} className="dash-row" style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "0.5rem 0.7rem" }}>
-                  <span>
-                    <strong>{goal.title}</strong>
-                    <span className="muted" style={{ marginLeft: "0.45rem" }}>
-                      {goal.dimension} · Dificultad {goal.difficulty}
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={completedGoalIds.includes(goal.id)}
-                    onChange={(e) =>
-                      setCompletedGoalIds((prev) =>
-                        e.target.checked ? [...prev, goal.id] : prev.filter((id) => id !== goal.id)
-                      )
-                    }
-                    style={{ width: "18px", height: "18px" }}
-                  />
-                </label>
-              ))}
-              {(participantGoals ?? []).length === 0 && (
-                <p className="muted">No hay microobjetivos globales activos para este programa.</p>
+            <div className="ql-progress-track">
+              <motion.div
+                className="ql-progress-fill"
+                initial={{ width: 0 }}
+                animate={{ width: `${completionPct}%` }}
+                transition={{ duration: 0.4 }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Two-column body ───────────────────────────────────────── */}
+      <div className="ql-body">
+        {/* LEFT: Participants pool */}
+        <div className="ql-pool">
+          <div className="ql-pool-header">
+            <div className="ql-pool-title">
+              <Users2 size={14} strokeWidth={2} />
+              Participants
+              <span className="ql-pool-count">{selectedParticipants.length} sel.</span>
+            </div>
+            <div className="ql-pool-search">
+              <Search size={13} strokeWidth={2} className="ql-pool-search-icon" />
+              <input
+                type="text"
+                placeholder="Cerca per nom o codi…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="ql-pool-search-input"
+              />
+            </div>
+          </div>
+
+          {participantsQ.isLoading ? (
+            <div className="ql-pool-state">Carregant participants…</div>
+          ) : participants.length === 0 ? (
+            <div className="ql-pool-state">
+              {form.programId
+                ? "Cap participant inscrit. Inscriu-ne des de Programes."
+                : "Cap participant. Crea'n des de la pàgina de Participants."}
+            </div>
+          ) : (
+            <div className="ql-pool-grid">
+              {selectedParticipants.length > 0 && (
+                <div className="ql-pool-section-label">Seleccionats</div>
               )}
+              <AnimatePresence>
+                {selectedParticipants.map((pid) => {
+                  const p = participants.find((x: Participant) => x.id === pid);
+                  if (!p) return null;
+                  const obs = (form.observations ?? {})[pid];
+                  const scored = obs && [obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0);
+                  return (
+                    <motion.button
+                      key={pid}
+                      type="button"
+                      layout
+                      initial={{ opacity: 0, scale: 0.92 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.85 }}
+                      transition={{ type: "spring", stiffness: 320, damping: 24 }}
+                      className={`ql-chip ${activeIdx === selectedParticipants.indexOf(pid) ? "active" : ""} ${scored ? "scored" : ""}`}
+                      onClick={() => setActiveIdx(selectedParticipants.indexOf(pid))}
+                    >
+                      <ParticipantAvatar name={p.first_name} size={28} />
+                      <span className="ql-chip-name">{p.first_name}</span>
+                      {scored && <Check size={12} strokeWidth={3} className="ql-chip-check" />}
+                      <span
+                        className="ql-chip-x"
+                        onClick={(e) => { e.stopPropagation(); toggleParticipant(pid); }}
+                      >
+                        <X size={12} strokeWidth={2.5} />
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </AnimatePresence>
+
+              {filteredAvailable.length > 0 && (
+                <div className="ql-pool-section-label" style={{ marginTop: selectedParticipants.length > 0 ? 10 : 0 }}>
+                  Disponibles ({filteredAvailable.length})
+                </div>
+              )}
+              <AnimatePresence>
+                {filteredAvailable.map((p) => (
+                  <motion.button
+                    key={p.id}
+                    type="button"
+                    layout
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="ql-chip ql-chip--available"
+                    onClick={() => toggleParticipant(p.id)}
+                  >
+                    <ParticipantAvatar name={p.first_name} size={28} />
+                    <span className="ql-chip-name">{p.first_name}</span>
+                    <span className="ql-chip-code">{p.code.slice(-3)}</span>
+                  </motion.button>
+                ))}
+              </AnimatePresence>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* RIGHT: Active participant scoring */}
+        <div className="ql-active">
+          {!activeParticipantId ? (
+            <div className="ql-empty">
+              <ClipboardList size={42} strokeWidth={1.4} className="ql-empty-icon" />
+              <div className="ql-empty-title">Selecciona participants</div>
+              <div className="ql-empty-sub">
+                Toca els participants de l'esquerra per puntuar-los. Pots afegir-ne tants com calgui.
+              </div>
+            </div>
+          ) : (() => {
+            const p = participants.find((x: Participant) => x.id === activeParticipantId);
+            if (!p) return null;
+            return (
+              <motion.div
+                key={activeParticipantId}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.22 }}
+                className="ql-scoring"
+              >
+                <div className="ql-scoring-header">
+                  <ParticipantAvatar name={p.first_name} size={48} />
+                  <div className="ql-scoring-name-block">
+                    <div className="ql-scoring-name">{p.first_name}</div>
+                    <div className="ql-scoring-code">{p.code}</div>
+                  </div>
+
+                  {selectedParticipants.length > 1 && (
+                    <div className="ql-scoring-nav">
+                      <button
+                        type="button"
+                        className="ql-nav-btn"
+                        onClick={() => setActiveIdx(Math.max(0, activeIdx - 1))}
+                        disabled={activeIdx === 0}
+                        title="Anterior (Alt+←)"
+                      >
+                        <ChevronLeft size={14} strokeWidth={2.5} />
+                      </button>
+                      <span className="ql-nav-counter">{activeIdx + 1} / {selectedParticipants.length}</span>
+                      <button
+                        type="button"
+                        className="ql-nav-btn"
+                        onClick={() => setActiveIdx(Math.min(selectedParticipants.length - 1, activeIdx + 1))}
+                        disabled={activeIdx === selectedParticipants.length - 1}
+                        title="Següent (Alt+→)"
+                      >
+                        <ChevronRight size={14} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="ql-row">
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      <UserCheck size={12} strokeWidth={2} />
+                      Assistència
+                    </div>
+                    <div className="ql-att-pills">
+                      {ATTENDANCE_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          className={`ql-att-pill ${activeObs.attendance === o.value ? "active" : ""}`}
+                          style={activeObs.attendance === o.value
+                            ? { borderColor: o.color, color: o.color, background: `color-mix(in srgb, ${o.color} 12%, transparent)` }
+                            : {}}
+                          onClick={() => setObs(activeParticipantId, "attendance", o.value)}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      <Sparkles size={12} strokeWidth={2} />
+                      Estat anímic
+                    </div>
+                    <div className="ql-mood-row">
+                      {MOOD_OPTIONS.map((m) => (
+                        <motion.button
+                          key={m.value}
+                          type="button"
+                          title={m.label}
+                          whileTap={{ scale: 0.85 }}
+                          className={`ql-mood-btn ${activeObs.mood === m.value ? "active" : ""}`}
+                          style={activeObs.mood === m.value
+                            ? { borderColor: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)`, color: m.color }
+                            : {}}
+                          onClick={() => setObs(activeParticipantId, "mood", m.value)}
+                        >
+                          <m.Icon size={16} strokeWidth={2} />
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ql-block">
+                  <div className="ql-block-label">
+                    {form.inputMode === "stars"     && "Puntuació per dimensió"}
+                    {form.inputMode === "star"      && "Estrella d'evolució (Outcomes Star)"}
+                    {form.inputMode === "reactions" && "Reaccions en directe"}
+                    <span className="ql-block-hint">
+                      {form.inputMode === "stars"     && "1-5 estrelles per dimensió"}
+                      {form.inputMode === "star"      && "Clica un nivell a cada eix · descripcions ancorades"}
+                      {form.inputMode === "reactions" && "Toca xips a mesura que observes · scores derivats"}
+                    </span>
+                  </div>
+
+                  {form.inputMode === "stars" && (
+                    <div className="ql-dim-grid">
+                      {DIMS.map(({ key, label, Icon, color }) => (
+                        <div key={key} className="ql-dim-card">
+                          <div className="ql-dim-card-head" style={{ color }}>
+                            <Icon size={14} strokeWidth={2.2} />
+                            <span>{label}</span>
+                          </div>
+                          <StarRating
+                            value={activeObs[key as DimKey] as number}
+                            onChange={(v) => setObs(activeParticipantId, key as DimKey, v)}
+                            color={color}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {form.inputMode === "star" && (
+                    <OutcomesStar
+                      scores={{
+                        academicScore:    activeObs.academicScore,
+                        cognitiveScore:   activeObs.cognitiveScore,
+                        socialScore:      activeObs.socialScore,
+                        integrationScore: activeObs.integrationScore,
+                      }}
+                      onChange={(dim, v) => handleStarChange(activeParticipantId, dim as DimKey, v)}
+                    />
+                  )}
+
+                  {form.inputMode === "reactions" && (
+                    <LiveReactions
+                      events={activeObs.events}
+                      onChange={(next) => handleEventsChange(activeParticipantId, next)}
+                    />
+                  )}
+                </div>
+
+                <div className="ql-block">
+                  <div className="ql-block-label">
+                    Nota d'observació
+                    <span className="ql-block-hint">Etiquetes ràpides</span>
+                  </div>
+                  <div className="ql-tag-row">
+                    {QUICK_TAGS.map((t) => (
+                      <button
+                        key={t.label}
+                        type="button"
+                        className="ql-tag"
+                        onClick={() => insertTag(t.insert)}
+                      >
+                        <span className="ql-tag-emoji">{t.icon}</span>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    className="ql-textarea"
+                    rows={3}
+                    value={activeObs.qualitativeNote}
+                    onChange={(e) => handleNoteChange(activeParticipantId, e.target.value)}
+                    placeholder={
+                      form.inputMode === "star"
+                        ? "(Opcional) Afegeix una observació personalitzada — la descripció del nivell ja s'incorpora automàticament."
+                        : form.inputMode === "reactions"
+                        ? "(Opcional) Comentari addicional — el resum de reaccions s'afegeix automàticament al desar."
+                        : `Avui, ${p.first_name} ha…`
+                    }
+                  />
+                </div>
+
+                {goals.length > 0 && (
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      Micro-objectius assolits avui
+                      {activeObs.microGoalIds.length > 0 && (
+                        <span className="ql-goal-count">{activeObs.microGoalIds.length}</span>
+                      )}
+                    </div>
+                    <div className="ql-goal-pills">
+                      {goals.map((g) => {
+                        const checked = activeObs.microGoalIds.includes(g.id);
+                        return (
+                          <motion.button
+                            key={g.id}
+                            type="button"
+                            whileTap={{ scale: 0.94 }}
+                            className={`ql-goal-pill ${checked ? "active" : ""}`}
+                            onClick={() => {
+                              const ids = checked
+                                ? activeObs.microGoalIds.filter((id) => id !== g.id)
+                                : [...activeObs.microGoalIds, g.id];
+                              setObs(activeParticipantId, "microGoalIds", ids);
+                            }}
+                          >
+                            {checked && <Check size={11} strokeWidth={3} />}
+                            {g.title}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })()}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "0.6rem", marginTop: "1rem" }}>
-        <button onClick={submit} disabled={mutation.isPending || participantsLoading || programsLoading}>
-          {mutation.isPending ? "Guardando..." : "Guardar sesión"}
-        </button>
-        <button className="btn-secondary" onClick={clear}>
-          Limpiar borrador
-        </button>
-      </div>
+      {/* ── Footer ───────────────────────────────────────────────── */}
+      <div className="ql-footer">
+        {selectedParticipants.length > 0 && (
+          <input
+            type="text"
+            className="ql-session-note"
+            placeholder="Nota general de la sessió (opcional)…"
+            value={form.notes}
+            onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+          />
+        )}
 
-      {validationMessage && <p style={{ color: "#dc2626" }}>{validationMessage}</p>}
-      {!hasAnyScore && <p className="muted">Sin puntuaciones cuantitativas en esta sesión.</p>}
-
-      {saved && (
-        <div className="toast toast-success" role="status" aria-live="polite">
-          Sesion guardada correctamente.
+        <div className="ql-footer-actions">
+          {saveError && <div className="ql-save-error">{saveError}</div>}
+          <span className="ql-shortcut-hint">⌘/Ctrl + S</span>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            disabled={saveMutation.isPending || !form.programId || selectedParticipants.length === 0}
+            onClick={() => { setSaveError(""); saveMutation.mutate(); }}
+            className="ql-save-btn"
+          >
+            {saveMutation.isPending
+              ? "Desant…"
+              : `Desar · ${selectedParticipants.length} ${selectedParticipants.length === 1 ? "participant" : "participants"}`}
+          </motion.button>
         </div>
-      )}
-      {mutation.isError && <p style={{ color: "#dc2626" }}>Error guardando sesión.</p>}
+      </div>
     </div>
   );
 }

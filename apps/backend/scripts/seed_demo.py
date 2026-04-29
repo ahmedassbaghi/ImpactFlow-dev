@@ -1,6 +1,7 @@
+"""Demo seed — creates a realistic dataset for ImpactFlow demo access."""
 import asyncio
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,21 +10,46 @@ from app.algorithms.ipi import DimensionScores, calculate_ipi, calculate_relativ
 from app.algorithms.risk_engine import calculate_risk_score
 from app.database import Base, SessionLocal, engine
 from app.models import (
+    AttendanceRecord,
     BaselineAssessment,
     Organization,
     Participant,
     PeriodicAssessment,
     Program,
+    ProgramMicroGoal,
+    ProgramMicroGoalCompletion,
+    Session,
+    SessionObservation,
     User,
 )
 from app.utils.auth import get_password_hash
 
+random.seed(42)
 
-NATIONALITIES = ["Marruecos", "Pakistan", "Cataluna", "Siria", "Honduras", "Senegal"]
+NATIONALITIES = ["Marroc", "Pakistan", "Catalunya", "Síria", "Hondures", "Senegal", "Romania", "Filipines"]
+MOODS = ["great", "good", "neutral", "bad", "very_bad"]
+SESSION_TYPES = ["individual", "group", "group", "group"]
+GOAL_TEMPLATES = [
+    ("academic", "Llegir 10 minuts seguits sense interrupcions", 1),
+    ("academic", "Resoldre 5 problemes de matemàtiques sense ajuda", 2),
+    ("academic", "Completar els deures 3 dies seguits", 1),
+    ("cognitive", "Completar una tasca de 20 min sense distraccions", 2),
+    ("cognitive", "Recordar i explicar 3 conceptes de la sessió anterior", 2),
+    ("social", "Participar almenys 1 cop en una activitat de grup", 1),
+    ("social", "Resoldre un conflicte verbal de manera pacífica", 3),
+    ("social", "Iniciar una conversa amb un company nou", 2),
+    ("integration", "Explicar una tradició del seu país en català", 2),
+    ("integration", "Llegir i comprendre un text en català", 1),
+]
 
 
 async def cleanup(db: AsyncSession) -> None:
-    for model in [PeriodicAssessment, BaselineAssessment, Participant, Program, User, Organization]:
+    for model in [
+        ProgramMicroGoalCompletion, ProgramMicroGoal,
+        SessionObservation, AttendanceRecord, Session,
+        PeriodicAssessment, BaselineAssessment,
+        Participant, Program, User, Organization,
+    ]:
         await db.execute(delete(model))
     await db.commit()
 
@@ -38,62 +64,67 @@ async def seed() -> None:
 
     async with SessionLocal() as db:
         await cleanup(db)
+
+        # ── Organisation ──────────────────────────────────────────────
         org = Organization(name="Narinan", slug="narinan", plan="pro")
         db.add(org)
         await db.flush()
 
+        # ── Users ─────────────────────────────────────────────────────
         users = [
-            User(
-                organization_id=org.id,
-                email="admin@impactflow.dev",
-                hashed_password=get_password_hash("admin123"),
-                full_name="Admin Demo",
-                role="admin",
-            ),
-            User(
-                organization_id=org.id,
-                email="coord1@impactflow.dev",
-                hashed_password=get_password_hash("coord123"),
-                full_name="Coordinator One",
-                role="coordinator",
-            ),
-            User(
-                organization_id=org.id,
-                email="prof1@impactflow.dev",
-                hashed_password=get_password_hash("prof123"),
-                full_name="Professional One",
-                role="professional",
-            ),
-            User(
-                organization_id=org.id,
-                email="donor@impactflow.dev",
-                hashed_password=get_password_hash("donor123"),
-                full_name="Donor Viewer",
-                role="donor",
-            ),
+            User(organization_id=org.id, email="admin@impactflow.dev",
+                 hashed_password=get_password_hash("admin123"),
+                 full_name="Admin Demo", role="admin"),
+            User(organization_id=org.id, email="coord1@impactflow.dev",
+                 hashed_password=get_password_hash("coord123"),
+                 full_name="Marina Solà", role="coordinator"),
+            User(organization_id=org.id, email="prof1@impactflow.dev",
+                 hashed_password=get_password_hash("prof123"),
+                 full_name="Jordi Puig", role="professional"),
+            User(organization_id=org.id, email="prof2@impactflow.dev",
+                 hashed_password=get_password_hash("prof123"),
+                 full_name="Laia Ferrer", role="professional"),
+            User(organization_id=org.id, email="donor@impactflow.dev",
+                 hashed_password=get_password_hash("donor123"),
+                 full_name="Donant Fundació", role="donor"),
         ]
         db.add_all(users)
         await db.flush()
 
+        admin_user, coord_user, prof1, prof2, donor_user = users
+        professionals = [prof1, prof2]
+
+        # ── Programs ──────────────────────────────────────────────────
         programs = [
-            Program(
-                organization_id=org.id,
-                name="Reforc escolar",
-                description="Programa de suport academic",
-                program_type="academic_support",
-                start_date=date.today() - timedelta(days=180),
-            ),
-            Program(
-                organization_id=org.id,
-                name="Teatre Social",
-                description="Programa de desenvolupament social",
-                program_type="theater",
-                start_date=date.today() - timedelta(days=180),
-            ),
+            Program(organization_id=org.id, name="Reforç Escolar",
+                    description="Suport acadèmic intensiu per a infants en risc d'exclusió",
+                    program_type="academic_support",
+                    start_date=date.today() - timedelta(days=180)),
+            Program(organization_id=org.id, name="Teatre Social",
+                    description="Desenvolupament social i integració a través de les arts",
+                    program_type="theater",
+                    start_date=date.today() - timedelta(days=180)),
         ]
         db.add_all(programs)
         await db.flush()
 
+        # ── Program micro-goals ────────────────────────────────────────
+        program_goals: list[ProgramMicroGoal] = []
+        for prog in programs:
+            for dim, title, diff in GOAL_TEMPLATES:
+                goal = ProgramMicroGoal(
+                    program_id=prog.id,
+                    created_by=coord_user.id,
+                    title=title,
+                    dimension=dim,
+                    difficulty=diff,
+                    target_date=date.today() + timedelta(days=random.randint(14, 60)),
+                )
+                program_goals.append(goal)
+        db.add_all(program_goals)
+        await db.flush()
+
+        # ── Participants + Assessments ────────────────────────────────
         participants: list[Participant] = []
         for i in range(1, 51):
             p = Participant(
@@ -105,7 +136,8 @@ async def seed() -> None:
                 nationality=random.choice(NATIONALITIES),
                 enrollment_date=date.today() - timedelta(days=random.randint(90, 180)),
                 consent_given=True,
-                is_control_group=i % 3 == 0,
+                is_control_group=i % 4 == 0,
+                active=True,
             )
             participants.append(p)
         db.add_all(participants)
@@ -130,7 +162,7 @@ async def seed() -> None:
             baseline = BaselineAssessment(
                 participant_id=participant.id,
                 program_id=program.id,
-                assessed_by=users[2].id,
+                assessed_by=professionals[idx % 2].id,
                 assessment_date=date.today() - timedelta(days=170),
                 reading_level=base_dims.reading_level,
                 math_level=base_dims.math_level,
@@ -147,7 +179,7 @@ async def seed() -> None:
             )
             db.add(baseline)
 
-            # Two periodic points to show growth trajectory
+            # Two periodic assessment points — M3 and M6
             for offset, period in [(90, "M3"), (0, "M6")]:
                 drift = 1 if idx % 10 < 7 else 0
                 current_dims = DimensionScores(
@@ -178,7 +210,7 @@ async def seed() -> None:
                 pa = PeriodicAssessment(
                     participant_id=participant.id,
                     program_id=program.id,
-                    assessed_by=users[2].id,
+                    assessed_by=professionals[idx % 2].id,
                     assessment_date=date.today() - timedelta(days=offset),
                     period_label=f"{period}-2026",
                     reading_level=current_dims.reading_level,
@@ -201,11 +233,102 @@ async def seed() -> None:
                 )
                 db.add(pa)
 
+        await db.flush()
+
+        # ── Sessions + Observations ───────────────────────────────────
+        # 2 sessions per week over last 6 months → ~48 sessions per program
+        sessions_created: list[Session] = []
+        for prog_idx, program in enumerate(programs):
+            prog_participants = [p for i, p in enumerate(participants) if i % 2 == prog_idx]
+            for week in range(24):  # 24 weeks
+                for day_offset in [0, 3]:  # Mon + Thu
+                    session_date = date.today() - timedelta(weeks=week, days=day_offset)
+                    prof = professionals[week % 2]
+                    session_type = random.choice(SESSION_TYPES)
+                    sess = Session(
+                        program_id=program.id,
+                        professional_id=prof.id,
+                        session_date=session_date,
+                        session_type=session_type,
+                        duration_minutes=random.choice([60, 90, 90, 120]),
+                        notes=f"Sessió {session_type} del {session_date}. Bona participació general.",
+                        notes_sentiment=random.uniform(0.3, 0.9),
+                    )
+                    db.add(sess)
+                    sessions_created.append(sess)
+
+        await db.flush()
+
+        # Assign observations to sessions
+        obs_count = 0
+        for sess in sessions_created:
+            prog_participants = [p for i, p in enumerate(participants)
+                                 if (i % 2) == programs.index(
+                                     next(pr for pr in programs if pr.id == sess.program_id)
+                                 )]
+            # 8-15 participants per group session, 1 for individual
+            n_obs = 1 if sess.session_type == "individual" else min(len(prog_participants), random.randint(8, 15))
+            sampled = random.sample(prog_participants, min(n_obs, len(prog_participants)))
+            seen_participants: set[str] = set()
+            for participant in sampled:
+                if participant.id in seen_participants:
+                    continue
+                seen_participants.add(participant.id)
+                obs = SessionObservation(
+                    session_id=sess.id,
+                    participant_id=participant.id,
+                    academic_score=random.choice([None, random.randint(1, 5)]),
+                    cognitive_score=random.choice([None, random.randint(1, 5)]),
+                    social_score=random.randint(1, 5),
+                    integration_score=random.choice([None, random.randint(1, 5)]),
+                    mood_indicator=random.choice(MOODS),
+                    qualitative_note=random.choice([
+                        None, None,
+                        "Molt participatiu avui, ha ajudat els companys.",
+                        "Ha mostrat millora en la comprensió lectora.",
+                        "Necessita suport addicional en matemàtiques.",
+                        "Excel·lent actitud i concentració durant tota la sessió.",
+                        "Ha tingut dificultats per mantenir l'atenció avui.",
+                    ]),
+                )
+                db.add(obs)
+                obs_count += 1
+
+        # ── Micro-goal completions ────────────────────────────────────
+        for goal in program_goals:
+            prog_participants = [p for i, p in enumerate(participants)
+                                 if (i % 2) == programs.index(
+                                     next(pr for pr in programs if pr.id == goal.program_id)
+                                 )]
+            # ~40% completion rate
+            completers = random.sample(prog_participants, max(1, int(len(prog_participants) * 0.4)))
+            for participant in completers[:random.randint(2, min(8, len(completers)))]:
+                completion = ProgramMicroGoalCompletion(
+                    program_micro_goal_id=goal.id,
+                    completed_at=datetime.now() - timedelta(days=random.randint(1, 60)),
+                    verified_by=coord_user.id,
+                    note="Completat satisfactòriament.",
+                )
+                db.add(completion)
+
         await db.commit()
-        print("Demo seed created")
-        print("admin@impactflow.dev / admin123")
-        print("coord1@impactflow.dev / coord123")
-        print("prof1@impactflow.dev / prof123")
+
+        print("=" * 50)
+        print("ImpactFlow demo seed created successfully")
+        print("=" * 50)
+        print(f"  Organisation: Narinan (pro)")
+        print(f"  Participants: {len(participants)} (50)")
+        print(f"  Programs:     {len(programs)} (Reforç Escolar + Teatre Social)")
+        print(f"  Sessions:     {len(sessions_created)}")
+        print(f"  Observations: {obs_count}")
+        print(f"  Micro-goals:  {len(program_goals)}")
+        print()
+        print("Demo users:")
+        print("  coord1@impactflow.dev  / coord123  [Coordinadora]")
+        print("  prof1@impactflow.dev   / prof123   [Professional]")
+        print("  donor@impactflow.dev   / donor123  [Donant]")
+        print("  admin@impactflow.dev   / admin123  [Admin]")
+        print("=" * 50)
 
 
 if __name__ == "__main__":

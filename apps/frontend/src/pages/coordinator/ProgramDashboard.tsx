@@ -1,35 +1,22 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { CircleHelp } from "lucide-react";
+import {
+  AlertTriangle, BookOpen, ChevronDown, ChevronUp, CheckCircle2,
+  CircleHelp, TrendingUp, Users, BarChart2, Target,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
+  Pie, PieChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis,
+  Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  getAnalyticsTrend,
-  getCostEffectiveness,
-  getCoordinatorDashboard,
-  getImpactStatement,
-  getIpiDistribution,
-  getSessionQuality,
+  getAnalyticsTrend, getCostEffectiveness, getCoordinatorDashboard,
+  getImpactStatement, getInterventionEffect, getIpiDistribution, getSessionQuality,
 } from "../../api/dashboard";
+import { BootstrapCIBadge } from "../../components/analytics/BootstrapCIBadge";
+import { EffectSizeCard } from "../../components/analytics/EffectSizeCard";
+import { SignificanceIndicator } from "../../components/analytics/SignificanceIndicator";
 import { ReportInsightsModal } from "../../components/reports/ReportInsightsModal";
 import { listPrograms } from "../../api/programs";
 import { generateReport } from "../../api/reports";
@@ -46,6 +33,121 @@ function InfoHint({ text }: { text: string }) {
     </span>
   );
 }
+
+function DashSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="dash-section">
+      <div className="dash-section-label">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function StatGuide() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="stat-guide-box">
+      <button className="stat-guide-toggle" onClick={() => setOpen((o) => !o)}>
+        <BookOpen size={13} strokeWidth={2.5} />
+        Com s'interpreten aquests valors?
+        {open ? <ChevronUp size={13} strokeWidth={2.5} /> : <ChevronDown size={13} strokeWidth={2.5} />}
+      </button>
+      {open && (
+        <div className="stat-guide-body">
+          <div className="stat-guide-grid">
+            <div className="stat-guide-item">
+              <div className="stat-guide-term">Punt de partida (Baseline)</div>
+              <div className="stat-guide-def">
+                La puntuació IPI inicial quan l'infant entra al programa. Tot el progrés es mesura des d'aquí.
+                <em> Exemple: entra amb IPI 38 i acaba el curs amb 61.</em>
+              </div>
+            </div>
+            <div className="stat-guide-item">
+              <div className="stat-guide-term">IPI (Índex de Progrés Integral, 0–100)</div>
+              <div className="stat-guide-def">
+                Nota global que combina acadèmic, cognitiu, social i integració.
+                <em> 50 és el punt mig. La majoria d'infants entren entre 30–55.</em>
+              </div>
+            </div>
+            <div className="stat-guide-item">
+              <div className="stat-guide-term">Mida de l'efecte — Cohen's d</div>
+              <div className="stat-guide-def">
+                "Quant ha canviat el grup respecte a la seva variabilitat?"
+                <strong> d &lt; 0.2</strong> trivial · <strong>0.2–0.5</strong> petit ·{" "}
+                <strong>0.5–0.8</strong> moderat · <strong>&gt; 0.8</strong> gran.
+                <em> En ciències socials, d &gt; 0.5 ja és rellevant.</em>
+              </div>
+            </div>
+            <div className="stat-guide-item">
+              <div className="stat-guide-term">p-valor (Wilcoxon)</div>
+              <div className="stat-guide-def">
+                "La millora podria ser per atzar?" Si p &lt; 0.05 → la millora és real i consistent.
+                <em> p &lt; 0.05 no vol dir que sigui gran, només que no és casualitat.</em>
+              </div>
+            </div>
+            <div className="stat-guide-item">
+              <div className="stat-guide-term">Interval de confiança 95%</div>
+              <div className="stat-guide-def">
+                Si repetíssim el programa 100 vegades, en 95 la millora real estaria dins d'aquest rang.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CeaSection({
+  costEffectiveness,
+  formatCurrency,
+}: {
+  costEffectiveness: ReturnType<typeof useMemo>;
+  formatCurrency: (v: number | null | undefined) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ce = costEffectiveness as any;
+  return (
+    <div className="dash-cea-wrap">
+      <button className="dash-cea-toggle" onClick={() => setOpen((o) => !o)}>
+        <Target size={14} strokeWidth={2} />
+        Anàlisi cost-efectivitat (CEA)
+        <InfoHint text="Relació entre recursos invertits i resultats de millora." />
+        {open ? <ChevronUp size={13} strokeWidth={2} /> : <ChevronDown size={13} strokeWidth={2} />}
+      </button>
+      {open && (
+        <div className="dash-cea-grid">
+          <div className="card kpi-card">
+            <div className="kpi-label">CPB — Cost per Beneficiari <InfoHint text="Cost mitjà per participant atès." /></div>
+            <div className="metric-value">{formatCurrency(ce?.cost_metrics?.cost_per_beneficiary)}</div>
+          </div>
+          <div className="card kpi-card">
+            <div className="kpi-label">CPI — Cost per Participant Millorat <InfoHint text="Cost per participant que millora significativament." /></div>
+            <div className="metric-value">{formatCurrency(ce?.cost_metrics?.cost_per_improved_participant)}</div>
+          </div>
+          <div className="card kpi-card">
+            <div className="kpi-label">Cost per Punt IPI <InfoHint text="Cost per punt de progrés guanyat." /></div>
+            <div className="metric-value">{formatCurrency(ce?.cost_metrics?.cost_per_ipi_point_gained)}</div>
+          </div>
+          <div className="card kpi-card">
+            <div className="kpi-label">Taxa d'Assoliment <InfoHint text="Proporció de participants que milloren." /></div>
+            <div className="metric-value">{Math.round((ce?.outcome_achievement_rate ?? 0) * 100)}%</div>
+          </div>
+          <div className="card kpi-card">
+            <div className="kpi-label">Guany IPI vs Baseline <InfoHint text="Increment mitjà vs referència inicial." /></div>
+            <div className="metric-value">{(ce?.avg_ipi_gain_vs_baseline ?? 0).toFixed(1)}</div>
+          </div>
+          <div className="card kpi-card">
+            <div className="kpi-label">ICER vs període anterior <InfoHint text="Cost incremental per unitat addicional de resultat." /></div>
+            <div className="metric-value">{formatCurrency(ce?.cost_metrics?.icer_vs_previous_period)}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProgramDashboardPage() {
   const [programInput, setProgramInput] = useState("");
@@ -67,527 +169,391 @@ export default function ProgramDashboardPage() {
     return () => window.clearTimeout(timer);
   }, [startDayOffset, endDayOffset]);
 
-  const periodEndDate = useMemo(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    return now;
-  }, []);
+  const periodEndDate = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const periodStartDate = useMemo(() => {
-    const start = new Date(periodEndDate);
-    start.setDate(periodEndDate.getDate() - (DASHBOARD_RANGE_DAYS - debouncedStartDayOffset));
-    return start;
+    const s = new Date(periodEndDate);
+    s.setDate(periodEndDate.getDate() - (DASHBOARD_RANGE_DAYS - debouncedStartDayOffset));
+    return s;
   }, [periodEndDate, debouncedStartDayOffset]);
   const periodEndDateByOffset = useMemo(() => {
-    const end = new Date(periodEndDate);
-    end.setDate(periodEndDate.getDate() - (DASHBOARD_RANGE_DAYS - debouncedEndDayOffset));
-    return end;
+    const e = new Date(periodEndDate);
+    e.setDate(periodEndDate.getDate() - (DASHBOARD_RANGE_DAYS - debouncedEndDayOffset));
+    return e;
   }, [periodEndDate, debouncedEndDayOffset]);
+
   const periodStart = useMemo(() => periodStartDate.toISOString().slice(0, 10), [periodStartDate]);
   const periodEnd = useMemo(() => periodEndDateByOffset.toISOString().slice(0, 10), [periodEndDateByOffset]);
-  const formattedPeriodStart = useMemo(() => periodStartDate.toLocaleDateString("es-ES"), [periodStartDate]);
-  const formattedPeriodEnd = useMemo(() => periodEndDateByOffset.toLocaleDateString("es-ES"), [periodEndDateByOffset]);
-  const selectedRangeDays = useMemo(
-    () => Math.max(1, debouncedEndDayOffset - debouncedStartDayOffset + 1),
-    [debouncedStartDayOffset, debouncedEndDayOffset]
-  );
+  const fmtStart = useMemo(() => periodStartDate.toLocaleDateString("ca-ES", { day:"2-digit", month:"short", year:"numeric" }), [periodStartDate]);
+  const fmtEnd = useMemo(() => periodEndDateByOffset.toLocaleDateString("ca-ES", { day:"2-digit", month:"short", year:"numeric" }), [periodEndDateByOffset]);
+  const selectedRangeDays = useMemo(() => Math.max(1, debouncedEndDayOffset - debouncedStartDayOffset + 1), [debouncedStartDayOffset, debouncedEndDayOffset]);
   const trendMonths = useMemo(() => Math.max(1, Math.ceil(selectedRangeDays / 30)), [selectedRangeDays]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["coordinator-dashboard", periodStart, periodEnd],
     queryFn: () => getCoordinatorDashboard(periodStart, periodEnd),
-    placeholderData: (previousData) => previousData,
+    placeholderData: (prev) => prev,
   });
-  const { data: programs } = useQuery({
-    queryKey: ["programs", "dashboard"],
-    queryFn: () => listPrograms(true),
-  });
-
-  const programChoices = useMemo(
-    () =>
-      (programs ?? []).map((program) => ({
-        id: program.id,
-        label: `${program.name} · ${program.id.slice(0, 8)}`,
-        search: `${program.name} ${program.id}`.toLowerCase(),
-      })),
-    [programs]
-  );
-
+  const { data: programs } = useQuery({ queryKey: ["programs", "dashboard"], queryFn: () => listPrograms(true) });
+  const programChoices = useMemo(() => (programs ?? []).map((p) => ({ id: p.id, label: `${p.name} · ${p.id.slice(0,8)}`, search: `${p.name} ${p.id}`.toLowerCase() })), [programs]);
   const resolveProgramId = (raw: string) => {
-    const query = raw.trim().toLowerCase();
-    if (!query) return "";
-    const exact = programChoices.find((item) => item.label.toLowerCase() === query || item.id.toLowerCase() === query);
-    if (exact) return exact.id;
-    return programChoices.find((item) => item.search.includes(query))?.id ?? "";
+    const q = raw.trim().toLowerCase();
+    if (!q) return "";
+    const exact = programChoices.find((i) => i.label.toLowerCase() === q || i.id.toLowerCase() === q);
+    return exact?.id ?? programChoices.find((i) => i.search.includes(q))?.id ?? "";
   };
   const selectedProgramId = useMemo(() => resolveProgramId(programInput), [programInput, programs]);
+  useEffect(() => { if (!programInput && programChoices.length > 0) setProgramInput(programChoices[0].label); }, [programChoices, programInput]);
 
-  useEffect(() => {
-    if (!programInput && programChoices.length > 0) {
-      setProgramInput(programChoices[0].label);
-    }
-  }, [programChoices, programInput]);
-
-  const { data: distribution } = useQuery({
-    queryKey: ["ipi-distribution", selectedProgramId, periodStart, periodEnd],
-    queryFn: () => getIpiDistribution(selectedProgramId, periodStart, periodEnd),
-    enabled: !!selectedProgramId,
-    placeholderData: (previousData) => previousData,
-  });
-
-  const { data: trend } = useQuery({
-    queryKey: ["analytics-trend", selectedProgramId, trendMonths],
-    queryFn: () => getAnalyticsTrend(selectedProgramId, trendMonths),
-    enabled: !!selectedProgramId,
-    placeholderData: (previousData) => previousData,
-  });
-
-  const { data: impactStatement } = useQuery({
-    queryKey: ["impact-statement", selectedProgramId],
-    queryFn: () => getImpactStatement(selectedProgramId),
-    enabled: !!selectedProgramId,
-    placeholderData: (previousData) => previousData,
-  });
-
-  const { data: sessionQuality } = useQuery({
-    queryKey: ["session-quality", selectedProgramId, periodStart, periodEnd],
-    queryFn: () => getSessionQuality(selectedProgramId, periodStart, periodEnd),
-    enabled: !!selectedProgramId && !!periodStart && !!periodEnd,
-    placeholderData: (previousData) => previousData,
-  });
+  const { data: distribution } = useQuery({ queryKey: ["ipi-distribution", selectedProgramId, periodStart, periodEnd], queryFn: () => getIpiDistribution(selectedProgramId, periodStart, periodEnd), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
+  const { data: trend } = useQuery({ queryKey: ["analytics-trend", selectedProgramId, trendMonths], queryFn: () => getAnalyticsTrend(selectedProgramId, trendMonths), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
+  const { data: impactStatement } = useQuery({ queryKey: ["impact-statement", selectedProgramId], queryFn: () => getImpactStatement(selectedProgramId), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
+  const { data: interventionEffect } = useQuery({ queryKey: ["intervention-effect", selectedProgramId, periodStart, periodEnd], queryFn: () => getInterventionEffect(selectedProgramId, periodStart, periodEnd), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
+  const { data: sessionQuality } = useQuery({ queryKey: ["session-quality", selectedProgramId, periodStart, periodEnd], queryFn: () => getSessionQuality(selectedProgramId, periodStart, periodEnd), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
 
   const periodCostValue = Number(periodCostEur || 0);
   const comparatorCostValue = Number(comparatorCostEur || 0);
-
-  const { data: costEffectiveness } = useQuery({
-    queryKey: ["cost-effectiveness", selectedProgramId, periodStart, periodEnd, periodCostValue, comparatorCostValue],
-    queryFn: () => getCostEffectiveness(selectedProgramId, periodStart, periodEnd, periodCostValue, comparatorCostValue),
-    enabled: !!selectedProgramId && !!periodStart && !!periodEnd,
-    placeholderData: (previousData) => previousData,
-  });
+  const { data: costEffectiveness } = useQuery({ queryKey: ["cost-effectiveness", selectedProgramId, periodStart, periodEnd, periodCostValue, comparatorCostValue], queryFn: () => getCostEffectiveness(selectedProgramId, periodStart, periodEnd, periodCostValue, comparatorCostValue), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
 
   const reportMutation = useMutation({
-    mutationFn: async (programId: string) => {
-      return generateReport({
-        program_id: programId,
-        report_type: "quarterly",
-        period_start: periodStart,
-        period_end: periodEnd,
-        title: `Analitica ${periodStart} a ${periodEnd}`,
-      });
-    },
-    onSuccess: (payload) => {
-      setReportMessageType("success");
-      setReportMessage(`Informe guardado correctamente: ${payload.id}`);
-    },
-    onError: (error: any) => {
-      const detail = error?.response?.data?.detail;
-      setReportMessageType("error");
-      setReportMessage(
-        typeof detail === "string"
-          ? `No se pudo generar el informe: ${detail}`
-          : "No se pudo generar el informe. Revisa programa y periodo."
-      );
-    },
+    mutationFn: async (programId: string) => generateReport({ program_id: programId, report_type: "quarterly", period_start: periodStart, period_end: periodEnd, title: `Anàlisi ${periodStart} — ${periodEnd}` }),
+    onSuccess: (payload) => { setReportMessageType("success"); setReportMessage(`Informe desat: ${payload.id}`); },
+    onError: (error: any) => { const d = error?.response?.data?.detail; setReportMessageType("error"); setReportMessage(typeof d === "string" ? `Error: ${d}` : "No s'ha pogut generar l'informe."); },
   });
 
-  const riskChartData = useMemo(
-    () => [
-      { name: "Bajo", value: Number(data?.low_risk ?? 0) },
-      { name: "Medio", value: Number(data?.medium_risk ?? 0) },
-      { name: "Alto", value: Number(data?.high_risk ?? 0) },
-    ],
-    [data]
-  );
-
-  const distributionChartData = useMemo(
-    () => Object.entries(distribution ?? {}).map(([range, value]) => ({ range, value: Number(value) })),
-    [distribution]
-  );
-
+  const riskChartData = useMemo(() => [
+    { name: "Baix", value: Number(data?.low_risk ?? 0) },
+    { name: "Mitjà", value: Number(data?.medium_risk ?? 0) },
+    { name: "Alt", value: Number(data?.high_risk ?? 0) },
+  ], [data]);
+  const distributionChartData = useMemo(() => Object.entries(distribution ?? {}).map(([range, value]) => ({ range, value: Number(value) })), [distribution]);
   const trendChartData = useMemo(() => (trend ?? []).map((item) => ({ period: item.period, ipi: item.avg_ipi })), [trend]);
-
   const radarData = useMemo(() => {
-    const scores = sessionQuality?.avg_dimension_scores;
-    if (!scores) return [];
+    const s = sessionQuality?.avg_dimension_scores;
+    if (!s) return [];
     return [
-      { dimension: "Academico", score: Number(scores.academic ?? 0) },
-      { dimension: "Autonomia", score: Number(scores.cognitive ?? 0) },
-      { dimension: "Social", score: Number(scores.social ?? 0) },
-      { dimension: "Bienestar", score: Number(scores.integration ?? 0) },
+      { dimension: "Acadèmic",   score: Number(s.academic ?? 0) },
+      { dimension: "Cognitiu",   score: Number(s.cognitive ?? 0) },
+      { dimension: "Social",     score: Number(s.social ?? 0) },
+      { dimension: "Integració", score: Number(s.integration ?? 0) },
     ];
   }, [sessionQuality]);
 
-  const dashboardReportContent = useMemo(() => {
-    const avgIpi = Number(data?.avg_ipi ?? 0);
-    const completeEvidence = Number(sessionQuality?.evidence_completeness ?? 0);
-    const attendance = Number(data?.attendance_present_rate_last_30d ?? 0);
-    const riskAvg = Number(data?.avg_risk_score ?? 0);
-    return {
-      headline_metrics: {
-        evaluations: Number(data?.assessments_count ?? 0),
-        improvement_pct: Math.max(0, Math.min(100, Math.round(avgIpi))),
-        retention_rate: Math.max(0, Math.min(100, Math.round(attendance * 100))),
-      },
-      session_quality: {
-        evidence_completeness: completeEvidence,
-        attendance_present_rate: attendance,
-        avg_mood: sessionQuality?.avg_mood ?? null,
-        avg_sentiment: sessionQuality?.avg_sentiment ?? null,
-      },
-      risk_distribution: {
-        bajo: Number(data?.low_risk ?? 0),
-        medio: Number(data?.medium_risk ?? 0),
-        alto: Number(data?.high_risk ?? 0),
-      },
-      narrative:
-        impactStatement?.statement ??
-        "Analitica consolidada del periodo seleccionado basada en asistencia, evaluaciones, progreso IPI y calidad de evidencia.",
-      key_statements: [
-        `Riesgo medio del periodo: ${riskAvg.toFixed(2)}.`,
-        `Calidad de evidencia: ${Math.round(completeEvidence * 100)}%.`,
-        `Observaciones analizadas: ${sessionQuality?.observations_count ?? 0}.`,
-      ],
-    };
-  }, [data, impactStatement, sessionQuality]);
+  const dashboardReportContent = useMemo(() => ({
+    headline_metrics: { evaluations: Number(data?.assessments_count ?? 0), improvement_pct: Math.round(Number(data?.avg_ipi ?? 0)), retention_rate: Math.round((data?.attendance_present_rate_last_30d ?? 0) * 100) },
+    session_quality: { evidence_completeness: Number(sessionQuality?.evidence_completeness ?? 0), attendance_present_rate: Number(data?.attendance_present_rate_last_30d ?? 0), avg_mood: sessionQuality?.avg_mood ?? null, avg_sentiment: sessionQuality?.avg_sentiment ?? null },
+    risk_distribution: { baix: Number(data?.low_risk ?? 0), mitja: Number(data?.medium_risk ?? 0), alt: Number(data?.high_risk ?? 0) },
+    narrative: impactStatement?.statement ?? "Analítica consolidada del període seleccionat.",
+    key_statements: [`Risc mitjà: ${Number(data?.avg_risk_score ?? 0).toFixed(2)}.`, `Qualitat de l'evidència: ${Math.round(Number(sessionQuality?.evidence_completeness ?? 0) * 100)}%.`, `Observacions: ${sessionQuality?.observations_count ?? 0}.`],
+  }), [data, impactStatement, sessionQuality]);
 
   const formatCurrency = (value: number | null | undefined) => {
-    if (value == null) return "-";
-    return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
+    if (value == null) return "—";
+    return new Intl.NumberFormat("ca-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
   };
 
-  if (isLoading) return <p>Cargando dashboard...</p>;
+  if (isLoading) return <div className="page-container"><div className="empty-state">Carregant el tauler…</div></div>;
+
+  const ie = interventionEffect;
+  const hasEffect = ie && !ie.error && ie.n_participants > 0;
 
   return (
-    <div className="grid dashboard-root">
+    <div className="page-container dash-page">
+
+      {/* ── 1. Header ─────────────────────────────────────────────────────── */}
       <div className="page-header">
-        <h1 style={{ margin: 0 }}>Dashboard de analitica de impacto</h1>
-        <span className="chip">Vista ejecutiva</span>
+        <div>
+          <h1 className="page-title">Tauler analític</h1>
+          <p className="page-subtitle">Progrés, evidència i eficiència del programa</p>
+        </div>
+        <div style={{ display: "flex", gap: "0.6rem" }}>
+          <button className="btn-secondary" onClick={() => setIsInsightsModalOpen(true)} disabled={!selectedProgramId}>
+            Informe complet
+          </button>
+          <Link to="/coordinator/reports" className="btn-primary" style={{ textDecoration: "none" }}>
+            Informes guardats
+          </Link>
+        </div>
       </div>
 
-      <div className="card dashboard-controls">
-        <div className="grid grid-2">
-          <label>
-            Programa
+      {/* ── 2. Controls ────────────────────────────────────────────────────── */}
+      <div className="card dash-controls-card">
+        <div className="dash-controls-grid">
+          <div>
+            <div className="form-label">Programa</div>
             <div className="combo-field">
-              <input
-                list="dashboard-program-options"
-                value={programInput}
-                onChange={(e) => setProgramInput(e.target.value)}
-                placeholder="Busca por nombre o ID"
-              />
+              <input list="dashboard-program-options" className="form-input" value={programInput} onChange={(e) => setProgramInput(e.target.value)} placeholder="Cerca per nom o ID" />
               <datalist id="dashboard-program-options">
-                {programChoices.map((item) => (
-                  <option key={item.id} value={item.label}>
-                    {item.id}
-                  </option>
-                ))}
+                {programChoices.map((item) => <option key={item.id} value={item.label} />)}
               </datalist>
             </div>
-          </label>
+          </div>
+
           <div>
-            Rango del informe
+            <div className="form-label">Període analitzat</div>
             <div className="dash-range-block">
               <div className="dash-range-head">
-                <span className="muted">Desde: {formattedPeriodStart}</span>
-                <span className="muted">Hasta: {formattedPeriodEnd}</span>
+                <span className="muted">Des de: {fmtStart}</span>
+                <span className="muted">Fins a: {fmtEnd}</span>
               </div>
               <div className="dash-range-track-wrap">
                 <div className="dash-range-track-base" />
-                <div
-                  className="dash-range-track-active"
-                  style={{
-                    left: `${(startDayOffset / DASHBOARD_RANGE_DAYS) * 100}%`,
-                    width: `${((endDayOffset - startDayOffset) / DASHBOARD_RANGE_DAYS) * 100}%`,
-                  }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={DASHBOARD_RANGE_DAYS}
-                  step={1}
-                  value={startDayOffset}
-                  className="dash-range-slider dash-range-slider-start"
-                  style={{ zIndex: startDayOffset > DASHBOARD_RANGE_DAYS - endDayOffset ? 5 : 3 }}
-                  onInput={(e) => {
-                    const next = Number((e.target as HTMLInputElement).value);
-                    setStartDayOffset(Math.min(next, endDayOffset - 1));
-                  }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={DASHBOARD_RANGE_DAYS}
-                  step={1}
-                  value={endDayOffset}
-                  className="dash-range-slider dash-range-slider-end"
-                  style={{ zIndex: 4 }}
-                  onInput={(e) => {
-                    const next = Number((e.target as HTMLInputElement).value);
-                    setEndDayOffset(Math.max(next, startDayOffset + 1));
-                  }}
-                />
+                <div className="dash-range-track-active" style={{ left: `${(startDayOffset / DASHBOARD_RANGE_DAYS) * 100}%`, width: `${((endDayOffset - startDayOffset) / DASHBOARD_RANGE_DAYS) * 100}%` }} />
+                <input type="range" min={0} max={DASHBOARD_RANGE_DAYS} step={1} value={startDayOffset} className="dash-range-slider dash-range-slider-start" style={{ zIndex: startDayOffset > DASHBOARD_RANGE_DAYS - endDayOffset ? 5 : 3 }} onInput={(e) => setStartDayOffset(Math.min(Number((e.target as HTMLInputElement).value), endDayOffset - 1))} />
+                <input type="range" min={0} max={DASHBOARD_RANGE_DAYS} step={1} value={endDayOffset} className="dash-range-slider dash-range-slider-end" style={{ zIndex: 4 }} onInput={(e) => setEndDayOffset(Math.max(Number((e.target as HTMLInputElement).value), startDayOffset + 1))} />
               </div>
-              <p className="muted" style={{ margin: "0.45rem 0 0" }}>
-                Ventana seleccionada: {selectedRangeDays} dias
-              </p>
+              <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.78rem" }}>Finestra: {selectedRangeDays} dies</p>
             </div>
           </div>
-        </div>
-        <div className="grid grid-2" style={{ marginTop: "0.75rem" }}>
-          <label>
-            Coste total del periodo (EUR)
-            <input
-              type="number"
-              min={0}
-              step="100"
-              value={periodCostEur}
-              onChange={(e) => setPeriodCostEur(e.target.value)}
-              placeholder="Ej. 18000"
-            />
-          </label>
-          <label>
-            Coste periodo comparador (EUR)
-            <input
-              type="number"
-              min={0}
-              step="100"
-              value={comparatorCostEur}
-              onChange={(e) => setComparatorCostEur(e.target.value)}
-              placeholder="Ej. 15000"
-            />
-          </label>
-        </div>
-        <div className="dashboard-actions">
-          <button
-            onClick={() => setIsInsightsModalOpen(true)}
-            disabled={!selectedProgramId}
-            style={{ marginTop: "0.75rem" }}
-          >
-            Abrir informe completo
-          </button>
-          <Link to="/coordinator/reports" className="btn-secondary dashboard-link-btn">
-            Ver informes guardados
-          </Link>
+
+          <div>
+            <div className="form-label">
+              Cost del període (EUR)
+              <InfoHint text="Cost total del programa en el període seleccionat." />
+            </div>
+            <input type="number" className="form-input" min={0} step="100" value={periodCostEur} onChange={(e) => setPeriodCostEur(e.target.value)} placeholder="Ex: 18000" />
+          </div>
+
+          <div>
+            <div className="form-label">
+              Cost del comparador (EUR)
+              <InfoHint text="Cost del període anterior per calcular l'ICER." />
+            </div>
+            <input type="number" className="form-input" min={0} step="100" value={comparatorCostEur} onChange={(e) => setComparatorCostEur(e.target.value)} placeholder="Ex: 15000" />
+          </div>
         </div>
         {reportMessage && (
-          <p style={{ color: reportMessageType === "error" ? "#b45309" : "#059669", marginTop: "0.6rem" }}>
+          <p style={{ color: reportMessageType === "error" ? "var(--risk-high)" : "var(--risk-low)", margin: "0.6rem 0 0", fontSize: "0.84rem" }}>
             {reportMessage}
           </p>
         )}
       </div>
 
-      <div className="card">
-        <h3>
-          Analisis de coste-efectividad (CEA){" "}
-          <InfoHint text="Marco de evaluacion de eficiencia para relacionar recursos invertidos con resultados de mejora en el programa." />
-        </h3>
-        <p className="muted">
-          Indicadores de eficiencia y resultado alineados con vocabulario de evaluacion de impacto social.
-        </p>
-        <div className="dashboard-kpi-grid" style={{ marginTop: "0.8rem" }}>
-          <div className="card kpi-card">
-            <div className="kpi-label">
-              CPB (Cost per Beneficiary)
-              <InfoHint text="Coste medio asignado a cada beneficiario atendido durante el periodo." />
-            </div>
-            <div className="metric-value">{formatCurrency(costEffectiveness?.cost_metrics.cost_per_beneficiary)}</div>
+      {/* ── 3. Visió general — 4 KPIs principals ──────────────────────────── */}
+      <DashSection label="Visió general">
+        <div className="dash-kpi-row dash-kpi-row--main">
+          <div className="card kpi-card kpi-card--accent">
+            <div className="kpi-icon"><Users size={18} strokeWidth={1.8} /></div>
+            <div className="kpi-label">Participants actius</div>
+            <div className="metric-value">{data?.participants_active ?? 0}</div>
           </div>
-          <div className="card kpi-card">
-            <div className="kpi-label">
-              CPI (Cost per Improved Participant)
-              <InfoHint text="Coste medio asociado a cada participante que alcanza mejora significativa en el periodo." />
-            </div>
-            <div className="metric-value">{formatCurrency(costEffectiveness?.cost_metrics.cost_per_improved_participant)}</div>
+          <div className="card kpi-card kpi-card--accent">
+            <div className="kpi-icon"><TrendingUp size={18} strokeWidth={1.8} /></div>
+            <div className="kpi-label">IPI mitjà <InfoHint text="Progrés integral del grup (0–100)." /></div>
+            <div className="metric-value">{data?.avg_ipi ?? 0}</div>
           </div>
-          <div className="card kpi-card">
-            <div className="kpi-label">
-              Cost per IPI Point
-              <InfoHint text="Coste asociado al avance agregado en puntos de progreso integral del grupo." />
-            </div>
-            <div className="metric-value">{formatCurrency(costEffectiveness?.cost_metrics.cost_per_ipi_point_gained)}</div>
+          <div className="card kpi-card kpi-card--accent">
+            <div className="kpi-icon"><BarChart2 size={18} strokeWidth={1.8} /></div>
+            <div className="kpi-label">Assistència efectiva (30d) <InfoHint text="Presència del grup en els últims 30 dies." /></div>
+            <div className="metric-value">{Math.round((data?.attendance_present_rate_last_30d ?? 0) * 100)}%</div>
           </div>
-          <div className="card kpi-card">
-            <div className="kpi-label">
-              OAR (Outcome Achievement Rate)
-              <InfoHint text="Proporcion de participantes que alcanzan mejora significativa en el periodo evaluado." />
-            </div>
-            <div className="metric-value">{Math.round((costEffectiveness?.outcome_achievement_rate ?? 0) * 100)}%</div>
-          </div>
-          <div className="card kpi-card">
-            <div className="kpi-label">
-              IPI Gain vs Baseline
-              <InfoHint text="Incremento medio de progreso integral frente a la referencia inicial del programa." />
-            </div>
-            <div className="metric-value">{(costEffectiveness?.avg_ipi_gain_vs_baseline ?? 0).toFixed(1)}</div>
-          </div>
-          <div className="card kpi-card">
-            <div className="kpi-label">
-              ICER vs periodo previo
-              <InfoHint text="Coste incremental por unidad adicional de resultado frente al periodo comparador inmediato." />
-            </div>
-            <div className="metric-value">{formatCurrency(costEffectiveness?.cost_metrics.icer_vs_previous_period)}</div>
+          <div className="card kpi-card kpi-card--accent">
+            <div className="kpi-icon"><CheckCircle2 size={18} strokeWidth={1.8} /></div>
+            <div className="kpi-label">Qualitat evidència (30d) <InfoHint text="Completesa de les observacions registrades." /></div>
+            <div className="metric-value">{Math.round((data?.evidence_completeness_last_30d ?? 0) * 100)}%</div>
           </div>
         </div>
-      </div>
+      </DashSection>
 
-      <div className="dashboard-kpi-grid">
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            Participantes activos
-            <InfoHint text="Total de participantes actualmente en seguimiento activo dentro del programa u organizacion." />
-          </div>
-          <div className="metric-value">{data?.participants_active ?? 0}</div>
-        </div>
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            Evaluaciones registradas
-            <InfoHint text="Cantidad de evaluaciones periodicas registradas y disponibles para analisis." />
-          </div>
-          <div className="metric-value">{data?.assessments_count ?? 0}</div>
-        </div>
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            IPI medio
-            <InfoHint text="Nivel general de progreso integral del grupo en una escala de 0 a 100." />
-          </div>
-          <div className="metric-value">{data?.avg_ipi ?? 0}</div>
-        </div>
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            Riesgo medio (0-1)
-            <InfoHint text="Nivel medio de riesgo del grupo en una escala de 0 a 1; valores altos indican mayor prioridad de intervencion." />
-          </div>
-          <div className="metric-value">{data?.avg_risk_score ?? 0}</div>
-        </div>
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            Asistencia efectiva (30d)
-            <InfoHint text="Presencia efectiva del grupo durante los ultimos 30 dias, incluyendo asistencia puntual o con retraso." />
-          </div>
-          <div className="metric-value">{Math.round((data?.attendance_present_rate_last_30d ?? 0) * 100)}%</div>
-        </div>
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            Calidad de evidencia (30d)
-            <InfoHint text="Nivel de calidad y utilidad de las observaciones registradas en los ultimos 30 dias." />
-          </div>
-          <div className="metric-value">{Math.round((data?.evidence_completeness_last_30d ?? 0) * 100)}%</div>
-        </div>
-        <div className="card kpi-card">
-          <div className="kpi-label">
-            Sesiones analizadas (periodo)
-            <InfoHint text="Volumen de sesiones incluidas en el periodo seleccionado para la lectura analitica." />
-          </div>
-          <div className="metric-value">{sessionQuality?.observations_count ?? 0}</div>
-        </div>
-      </div>
+      {/* ── 4. Evidència d'impacte ─────────────────────────────────────────── */}
+      {hasEffect && (
+        <DashSection label="Ha funcionat el programa?">
+          <div className="card">
+            {/* Headline */}
+            <div className="dash-impact-headline">
+              <div className="dash-impact-numbers">
+                <div className="dash-impact-change">
+                  <span className="dash-impact-change-value" style={{ color: (ie.ipi_change_percent ?? 0) >= 0 ? "var(--trend-up)" : "var(--trend-down)" }}>
+                    {(ie.ipi_change_percent ?? 0) >= 0 ? "+" : ""}{ie.ipi_change_percent?.toFixed(1)}%
+                  </span>
+                  <span className="dash-impact-change-label">de millora de l'IPI</span>
+                </div>
+                <div className="dash-impact-baseline">
+                  <span className="dash-impact-baseline-flow">
+                    {ie.ipi_mean_baseline?.toFixed(1)} <span className="dash-impact-arrow">→</span> {ie.ipi_mean_final?.toFixed(1)}
+                  </span>
+                  <span className="dash-impact-baseline-label">punt de partida → nivell actual</span>
+                </div>
+                <div className="dash-impact-n">
+                  {ie.n_participants} participants · {periodStart} — {periodEnd}
+                </div>
+              </div>
+              <span className={`dash-impact-badge${ie.wilcoxon_significant ? "" : " dash-impact-badge--warn"}`}>
+                {ie.wilcoxon_significant
+                  ? <><CheckCircle2 size={13} strokeWidth={2.5} /> Efecte significatiu</>
+                  : <><AlertTriangle size={13} strokeWidth={2.5} /> Efecte no significatiu</>}
+              </span>
+            </div>
 
-      <div className="grid dashboard-chart-grid">
-        <div className="card">
-          <h3>
-            Tendencia IPI <InfoHint text="Evolucion del progreso integral a lo largo del tiempo y direccion general del rendimiento del grupo." />
-          </h3>
-          <p className="muted">Si sube, el rendimiento escolar medio mejora en el periodo.</p>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={trendChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="period" />
-                <YAxis domain={[0, 100]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="ipi" name="IPI medio" stroke="#4f46e5" strokeWidth={3} dot />
-              </LineChart>
-            </ResponsiveContainer>
+            {ie.narrative && <p className="narrative-text">{ie.narrative}</p>}
+
+            <StatGuide />
+
+            {/* Stats detail */}
+            <div className="stat-evidence-grid" style={{ marginTop: "1rem" }}>
+              <EffectSizeCard d={ie.cohens_d} label={ie.cohens_d_label} />
+              <SignificanceIndicator p={ie.wilcoxon_p} significant={ie.wilcoxon_significant} />
+              <BootstrapCIBadge lower={ie.bootstrap_ci_95?.[0]} upper={ie.bootstrap_ci_95?.[1]} />
+              {ie.has_control_group && (
+                <div className="stat-evidence-card">
+                  <div className="stat-evidence-label">Mann-Whitney U</div>
+                  <div className="stat-evidence-value" style={{ color: ie.mann_whitney_significant ? "var(--risk-low)" : "var(--risk-medium)", fontSize: "1.2rem" }}>
+                    {ie.mann_whitney_p != null ? `p = ${ie.mann_whitney_p.toFixed(3)}` : "p = —"}
+                  </div>
+                  <span className="stat-evidence-badge" style={{ color: ie.mann_whitney_significant ? "var(--risk-low)" : "var(--risk-medium)", background: ie.mann_whitney_significant ? "#ecfdf5" : "#fffbeb", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                    {ie.mann_whitney_significant ? <><CheckCircle2 size={11} strokeWidth={2.5} /> Grup control</> : <><AlertTriangle size={11} strokeWidth={2.5} /> Grup control</>}
+                  </span>
+                  <div className="stat-evidence-hint">Intervenció vs. control</div>
+                </div>
+              )}
+            </div>
           </div>
-          {impactStatement?.statement && <p className="insight-box">{impactStatement.statement}</p>}
-        </div>
-        <div className="card">
-          <h3>
-            Riesgo por nivel <InfoHint text="Reparto de participantes por nivel de riesgo: bajo, medio y alto." />
-          </h3>
-          <p className="muted">Bajo, medio y alto para priorizar intervenciones de apoyo.</p>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={riskChartData} dataKey="value" nameKey="name" outerRadius={96} label>
-                  {riskChartData.map((entry, index) => (
-                    <Cell key={entry.name} fill={RISK_COLORS[index % RISK_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <div className="card">
-          <h3>
-            Distribucion IPI por rangos{" "}
-            <InfoHint text="Distribucion del grupo por tramos de progreso para identificar concentraciones de rendimiento." />
-          </h3>
-          <p className="muted">Concentracion de participantes por tramo de rendimiento.</p>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={distributionChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="range" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="value" name="Participantes" radius={[6, 6, 0, 0]}>
-                  {distributionChartData.map((item, index) => (
-                    <Cell key={item.range} fill={DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <div className="card">
-          <h3>
-            Calidad de sesion por dimension{" "}
-            <InfoHint text="Nivel de calidad observado por dimension clave de la sesion: academico, autonomia, social y bienestar." />
-          </h3>
-          <p className="muted">Muestra score medio por dimension en el periodo seleccionado.</p>
-          <div className="chart-wrap">
-            {radarData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <RadarChart data={radarData}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="dimension" />
-                  <PolarRadiusAxis domain={[0, 5]} />
+        </DashSection>
+      )}
+
+      {/* ── 5. Evolució i distribució ──────────────────────────────────────── */}
+      <DashSection label="Com evoluciona el grup?">
+        <div className="dash-chart-pair">
+          <div className="card">
+            <div className="dash-chart-header">
+              <div>
+                <div className="dash-chart-title">Tendència IPI <InfoHint text="Evolució del progrés integral al llarg del temps." /></div>
+                <p className="muted" style={{ margin: "0.15rem 0 0", fontSize: "0.82rem" }}>Si puja, el rendiment general millora en el període.</p>
+              </div>
+            </div>
+            {impactStatement?.statement && <p className="insight-box" style={{ marginBottom: "0.75rem" }}>{impactStatement.statement}</p>}
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={trendChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
                   <Tooltip />
-                  <Radar dataKey="score" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.45} />
-                </RadarChart>
+                  <Line type="monotone" dataKey="ipi" name="IPI mitjà" stroke="var(--brand-500)" strokeWidth={3} dot />
+                </LineChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="empty-box">No hay observaciones suficientes para este periodo.</div>
-            )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="dash-chart-header">
+              <div>
+                <div className="dash-chart-title">Distribució IPI per rangs <InfoHint text="Participants per tram de rendiment." /></div>
+                <p className="muted" style={{ margin: "0.15rem 0 0", fontSize: "0.82rem" }}>Concentració per tram per identificar necessitats.</p>
+              </div>
+            </div>
+            <div className="chart-wrap">
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={distributionChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="range" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" name="Participants" radius={[6,6,0,0]}>
+                    {distributionChartData.map((item, index) => (
+                      <Cell key={item.range} fill={DISTRIBUTION_COLORS[index % DISTRIBUTION_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
-      </div>
+      </DashSection>
+
+      {/* ── 6. Risc i qualitat ─────────────────────────────────────────────── */}
+      <DashSection label="Qui necessita atenció?">
+        <div className="dash-chart-pair">
+          <div className="card">
+            <div className="dash-chart-header">
+              <div>
+                <div className="dash-chart-title">Distribució de risc <InfoHint text="Participants per nivell de risc." /></div>
+                <p className="muted" style={{ margin: "0.15rem 0 0", fontSize: "0.82rem" }}>
+                  Baix · Mitjà · Alt — per prioritzar intervencions de suport.
+                </p>
+              </div>
+            </div>
+            <div className="dash-risk-inline">
+              <div className="chart-wrap" style={{ flex: "0 0 200px" }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={riskChartData} dataKey="value" nameKey="name" outerRadius={80} label>
+                      {riskChartData.map((entry, index) => (
+                        <Cell key={entry.name} fill={RISK_COLORS[index % RISK_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="dash-risk-legend">
+                {riskChartData.map((item, i) => (
+                  <div key={item.name} className="dash-risk-legend-row">
+                    <span className="dash-risk-dot" style={{ background: RISK_COLORS[i] }} />
+                    <span className="dash-risk-legend-label">{item.name}</span>
+                    <span className="dash-risk-legend-value">{item.value}</span>
+                  </div>
+                ))}
+                <div className="dash-secondary-kpis">
+                  <div className="dash-secondary-kpi">
+                    <div className="kpi-label">Risc mitjà</div>
+                    <div style={{ fontWeight: 700, fontSize: "1.2rem" }}>{Number(data?.avg_risk_score ?? 0).toFixed(2)}</div>
+                  </div>
+                  <div className="dash-secondary-kpi">
+                    <div className="kpi-label">Avaluacions</div>
+                    <div style={{ fontWeight: 700, fontSize: "1.2rem" }}>{data?.assessments_count ?? 0}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="dash-chart-header">
+              <div>
+                <div className="dash-chart-title">Qualitat per dimensió <InfoHint text="Puntuació mitjana per dimensió en el període." /></div>
+                <p className="muted" style={{ margin: "0.15rem 0 0", fontSize: "0.82rem" }}>
+                  Acadèmic, cognitiu, social i integració · {sessionQuality?.observations_count ?? 0} observacions.
+                </p>
+              </div>
+            </div>
+            <div className="chart-wrap">
+              {radarData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="var(--border)" />
+                    <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 11 }} />
+                    <PolarRadiusAxis domain={[0, 5]} tick={false} />
+                    <Tooltip />
+                    <Radar dataKey="score" stroke="var(--brand-500)" fill="var(--brand-500)" fillOpacity={0.35} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="empty-state" style={{ padding: "2rem" }}>
+                  No hi ha observacions suficients per a aquest període.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </DashSection>
+
+      {/* ── 7. Cost-efectivitat (desplegable) ─────────────────────────────── */}
+      <DashSection label="Eficiència">
+        <CeaSection costEffectiveness={costEffectiveness} formatCurrency={formatCurrency} />
+      </DashSection>
+
       <ReportInsightsModal
         open={isInsightsModalOpen}
-        title="Informe completo del periodo"
+        title="Informe complet del període"
         content={dashboardReportContent}
         onClose={() => setIsInsightsModalOpen(false)}
         onSave={() => {
-          if (!selectedProgramId) {
-            setReportMessageType("error");
-            setReportMessage("Selecciona un programa válido antes de guardar.");
-            return;
-          }
-          if (periodEnd < periodStart) {
-            setReportMessageType("error");
-            setReportMessage("La fecha de fin no puede ser anterior a la fecha de inicio.");
-            return;
-          }
-          setReportMessageType("");
-          setReportMessage("");
+          if (!selectedProgramId) { setReportMessageType("error"); setReportMessage("Selecciona un programa vàlid."); return; }
+          if (periodEnd < periodStart) { setReportMessageType("error"); setReportMessage("La data de fi no pot ser anterior a la data d'inici."); return; }
+          setReportMessageType(""); setReportMessage("");
           reportMutation.mutate(selectedProgramId);
         }}
-        saveLabel="Guardar informe"
+        saveLabel="Desar informe"
         saving={reportMutation.isPending}
       />
     </div>
