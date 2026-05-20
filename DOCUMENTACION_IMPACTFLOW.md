@@ -1,5 +1,7 @@
 # ImpactFlow — Documentación técnica y funcional completa
 
+http://192.168.1.24:5173
+
 > **Versión del documento:** generada a partir del estado del repositorio `ImpactFlow-dev`  
 > **Propósito:** referencia exhaustiva de módulos, funcionalidades, arquitectura, API, algoritmos y flujos de usuario.
 
