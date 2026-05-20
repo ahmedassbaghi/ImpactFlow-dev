@@ -19,7 +19,7 @@ const DEMO_PROFILES = [
   },
   {
     role: "professional",
-    label: "Professional",
+    label: "Voluntari/a",
     description: "Registre de sessions, observacions i seguiment diari",
     email: "prof1@impactflow.dev",
     password: "prof123",

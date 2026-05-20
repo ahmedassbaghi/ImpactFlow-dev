@@ -17,9 +17,32 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SchoolCreate(BaseModel):
+    name: str
+    abbreviation: str = Field(min_length=2, max_length=6, pattern=r"^[A-Z0-9]+$")
+
+
+class SchoolUpdate(BaseModel):
+    name: Optional[str] = None
+    abbreviation: Optional[str] = Field(default=None, min_length=2, max_length=6, pattern=r"^[A-Z0-9]+$")
+    active: Optional[bool] = None
+
+
+class SchoolOut(BaseModel):
+    id: str
+    name: str
+    abbreviation: str
+    active: bool
+    participant_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 class ParticipantCreate(BaseModel):
-    program_id: str
-    code: str
+    program_id: Optional[str] = None
+    school_id: str
+    code: Optional[str] = None
     first_name: str
     birth_year: Optional[int] = None
     gender: str = "unknown"
@@ -27,6 +50,16 @@ class ParticipantCreate(BaseModel):
     enrollment_date: date
     consent_given: bool = False
     is_control_group: bool = False
+
+
+class ParticipantUpdate(BaseModel):
+    school_id: Optional[str] = None
+    first_name: Optional[str] = None
+    code: Optional[str] = None
+    birth_year: Optional[int] = None
+    gender: Optional[str] = None
+    nationality: Optional[str] = None
+    active: Optional[bool] = None
 
 
 class ParticipantOut(BaseModel):
@@ -37,9 +70,36 @@ class ParticipantOut(BaseModel):
     enrollment_date: date
     is_control_group: bool
     active: bool
+    school_id: str
+    school_name: Optional[str] = None
+    school_abbreviation: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class FollowUpAssessmentInput(BaseModel):
+    participant_id: str
+    program_id: str
+    assessment_date: date
+    period_label: str = "seguiment"
+    academic_score: Optional[int] = Field(default=None, ge=0, le=10)
+    cognitive_score: Optional[int] = Field(default=None, ge=0, le=10)
+    social_score: Optional[int] = Field(default=None, ge=0, le=10)
+    integration_score: Optional[int] = Field(default=None, ge=0, le=10)
+    notes: Optional[str] = None
+
+
+class UserAssignmentUpdate(BaseModel):
+    participant_ids: list[str]
+
+
+class OrganizationSettingsOut(BaseModel):
+    participant_code_pattern: str
+
+
+class OrganizationSettingsUpdate(BaseModel):
+    participant_code_pattern: str = Field(min_length=3, max_length=80)
 
 
 class ProgramCreate(BaseModel):
@@ -93,6 +153,10 @@ class SessionObservationInput(BaseModel):
     attendance_status: str = "present"
 
 
+class ParticipantEnrollIn(BaseModel):
+    participant_id: str
+
+
 class SessionMicroGoalCompletionInput(BaseModel):
     goal_id: str
     note: Optional[str] = None
@@ -120,6 +184,16 @@ class SessionOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SessionParticipantBrief(BaseModel):
+    id: str
+    first_name: str
+    code: str
+
+
+class SessionListOut(SessionOut):
+    participants: list[SessionParticipantBrief] = []
 
 
 class SessionObservationOut(BaseModel):
@@ -211,3 +285,7 @@ class UserOut(BaseModel):
 
 class PlanUpdateRequest(BaseModel):
     plan: str = Field(pattern="^(free|starter|pro|enterprise)$")
+
+
+class LandingContentUpdate(BaseModel):
+    landing_content: str

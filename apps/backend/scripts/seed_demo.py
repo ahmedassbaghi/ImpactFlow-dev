@@ -16,11 +16,14 @@ from app.models import (
     Participant,
     PeriodicAssessment,
     Program,
+    ProgramEnrollment,
     ProgramMicroGoal,
     ProgramMicroGoalCompletion,
+    School,
     Session,
     SessionObservation,
     User,
+    UserParticipantAssignment,
 )
 from app.utils.auth import get_password_hash
 
@@ -45,10 +48,11 @@ GOAL_TEMPLATES = [
 
 async def cleanup(db: AsyncSession) -> None:
     for model in [
+        UserParticipantAssignment, ProgramEnrollment,
         ProgramMicroGoalCompletion, ProgramMicroGoal,
         SessionObservation, AttendanceRecord, Session,
         PeriodicAssessment, BaselineAssessment,
-        Participant, Program, User, Organization,
+        Participant, School, Program, User, Organization,
     ]:
         await db.execute(delete(model))
     await db.commit()
@@ -108,6 +112,14 @@ async def seed() -> None:
         db.add_all(programs)
         await db.flush()
 
+        schools = [
+            School(organization_id=org.id, name="Escola Sagrada Família", abbreviation="ESF"),
+            School(organization_id=org.id, name="Institut Montserrat", abbreviation="IMO"),
+            School(organization_id=org.id, name="Escola El Cim", abbreviation="ELC"),
+        ]
+        db.add_all(schools)
+        await db.flush()
+
         # ── Program micro-goals ────────────────────────────────────────
         program_goals: list[ProgramMicroGoal] = []
         for prog in programs:
@@ -127,9 +139,11 @@ async def seed() -> None:
         # ── Participants + Assessments ────────────────────────────────
         participants: list[Participant] = []
         for i in range(1, 51):
+            school = schools[i % len(schools)]
             p = Participant(
                 organization_id=org.id,
-                code=f"NRN-2024-{i:03d}",
+                school_id=school.id,
+                code=f"{school.abbreviation}-2024-{i:03d}",
                 first_name=f"Participant-{i}",
                 birth_year=random.randint(2012, 2020),
                 gender=random.choice(["M", "F", "NB", "unknown"]),
@@ -143,8 +157,22 @@ async def seed() -> None:
         db.add_all(participants)
         await db.flush()
 
+        for idx, participant in enumerate(participants[:25]):
+            db.add(UserParticipantAssignment(user_id=prof1.id, participant_id=participant.id))
+        for idx, participant in enumerate(participants[25:]):
+            db.add(UserParticipantAssignment(user_id=prof2.id, participant_id=participant.id))
+        await db.flush()
+
         for idx, participant in enumerate(participants):
             program = programs[idx % 2]
+            db.add(
+                ProgramEnrollment(
+                    program_id=program.id,
+                    participant_id=participant.id,
+                    enrolled_at=participant.enrollment_date,
+                    active=True,
+                )
+            )
             base_dims = DimensionScores(
                 reading_level=random.randint(1, 3),
                 math_level=random.randint(1, 3),

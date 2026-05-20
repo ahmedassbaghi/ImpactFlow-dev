@@ -20,6 +20,52 @@
   box-shadow: none;
 }
 
+.ql-shell--volunteer {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ql-shell--volunteer .ql-topbar {
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+.ql-shell--volunteer .ql-meta-program {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 100%;
+}
+
+.ql-shell--volunteer .ql-mode-toggle {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+.ql-shell--volunteer .ql-mode-btn {
+  flex: 1;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.ql-body--single {
+  grid-template-columns: 1fr !important;
+}
+
+.ql-shell--volunteer .ql-body--single .ql-active {
+  border: none;
+}
+
+.ql-shell--volunteer .ql-footer {
+  padding: 10px 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ql-shell--volunteer .ql-shortcut-hint {
+  display: none;
+}
+
 /* ── Top bar ─────────────────────────────────────────────────────────── */
 .ql-topbar {
   display: flex;
@@ -958,20 +1004,82 @@
    OUTCOMES STAR — radial 4-axis input
    ════════════════════════════════════════════════════════════════════ */
 .ostar-wrap {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 16px;
-  align-items: start;
-}
-@media (max-width: 720px) {
-  .ostar-wrap { grid-template-columns: 1fr; }
-}
-.ostar-svg {
-  width: 280px;
-  height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
+}
+
+.ostar-chart {
+  position: relative;
+  width: 100%;
+  max-width: min(280px, 100%);
+  margin: 0 auto;
+  min-width: 0;
+  padding: 1.5rem 2rem;
+  box-sizing: border-box;
+}
+
+.ostar-chart .ostar-svg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  display: block;
+}
+
+.ostar-axis-labels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ostar-axis-label {
+  position: absolute;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-align: center;
+  max-width: 42%;
+  word-wrap: break-word;
+  hyphens: auto;
+}
+
+.ostar-axis-label--top {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.ostar-axis-label--right {
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: right;
+  max-width: 38%;
+}
+
+.ostar-axis-label--bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.ostar-axis-label--left {
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  text-align: left;
+  max-width: 38%;
+}
+
+.ostar-svg {
   user-select: none;
-  flex-shrink: 0;
 }
 
 .ostar-panel {
@@ -1022,32 +1130,41 @@
   gap: 7px;
 }
 .ostar-selected-item {
-  display: grid;
-  grid-template-columns: 90px auto 1fr;
-  gap: 8px;
-  align-items: baseline;
-  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
 }
-.ostar-selected-dim { font-weight: 700; }
+
+.ostar-selected-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ostar-selected-dim { font-weight: 700; font-size: 0.82rem; }
 .ostar-selected-level {
   font-size: 0.72rem;
   color: var(--text-secondary);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 .ostar-selected-anchor {
   color: var(--text-secondary);
-  line-height: 1.35;
+  line-height: 1.4;
+  font-size: 0.78rem;
+  word-wrap: break-word;
 }
 .ostar-selected-empty {
-  grid-column: 2 / -1;
   color: var(--text-muted);
   font-style: italic;
+  font-size: 0.78rem;
 }
 
 /* ════════════════════════════════════════════════════════════════════

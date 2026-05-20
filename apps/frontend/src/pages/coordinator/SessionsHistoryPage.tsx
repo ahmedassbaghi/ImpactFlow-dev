@@ -7,6 +7,10 @@ import {
 import { listSessions, getSessionObservations, SessionListItem } from "../../api/sessions";
 import { listPrograms } from "../../api/programs";
 import { listParticipants } from "../../api/participants";
+import { listSchools } from "../../api/schools";
+import { useAuthStore } from "../../stores/authStore";
+import { VolunteerPageHeader } from "../../components/voluntari/VolunteerPageHeader";
+import { PremiumSelect } from "../../components/voluntari/PremiumSelect";
 
 const SESSION_TYPE_LABELS: Record<string, string> = {
   group:       "Grupal",
@@ -34,6 +38,17 @@ const DIM_CONFIG = [
 ] as const;
 
 const PAGE_SIZE = 15;
+
+function formatSessionParticipants(s: SessionListItem): string {
+  const list = s.participants ?? [];
+  if (list.length === 0) return "Sense alumnes registrats";
+  if (list.length === 1) return `${list[0].first_name} (${list[0].code})`;
+  if (list.length <= 3) {
+    return list.map((p) => `${p.first_name} (${p.code})`).join(", ");
+  }
+  const head = list.slice(0, 2).map((p) => p.first_name).join(", ");
+  return `${head} +${list.length - 2} més`;
+}
 
 function ScoreDots({ value }: { value: number | null }) {
   if (!value) return <span className="text-secondary" style={{ fontSize: "0.8rem" }}>—</span>;
@@ -168,9 +183,9 @@ function SessionDetailDrawer({
                   <div key={obs.id} className="sh-obs-card">
                     <div className="sh-obs-header">
                       <div className="sh-obs-avatar">
-                        {(participantName(obs.participant_id)[0] ?? "?").toUpperCase()}
+                        {(participantName(obs.participant_id, session)[0] ?? "?").toUpperCase()}
                       </div>
-                      <div className="sh-obs-name">{participantName(obs.participant_id)}</div>
+                      <div className="sh-obs-name">{participantName(obs.participant_id, session)}</div>
                       {mood && (
                         <span className="sh-obs-mood" style={{ color: mood.color }}>
                           {mood.label}
@@ -207,7 +222,9 @@ function SessionDetailDrawer({
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function SessionsHistoryPage() {
+  const isVolunteer = useAuthStore((s) => s.role) === "professional";
   const [filterProgram, setFilterProgram] = useState("");
+  const [filterSchool, setFilterSchool] = useState("");
   const [filterParticipant, setFilterParticipant] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -220,16 +237,18 @@ export default function SessionsHistoryPage() {
     queryFn: () => listPrograms(false),
   });
 
+  const { data: schools = [] } = useQuery({ queryKey: ["schools"], queryFn: listSchools });
   const { data: participants = [] } = useQuery({
-    queryKey: ["participants"],
-    queryFn: () => listParticipants(),
+    queryKey: ["participants", filterSchool],
+    queryFn: () => listParticipants({ schoolId: filterSchool || undefined }),
   });
 
   const { data: sessions = [], isLoading } = useQuery({
-    queryKey: ["sessions", filterProgram, filterParticipant, filterDateFrom, filterDateTo],
+    queryKey: ["sessions", filterProgram, filterSchool, filterParticipant, filterDateFrom, filterDateTo],
     queryFn: () =>
       listSessions({
         program_id: filterProgram || undefined,
+        school_id: filterSchool || undefined,
         participant_id: filterParticipant || undefined,
         date_from: filterDateFrom || undefined,
         date_to: filterDateTo || undefined,
@@ -237,21 +256,30 @@ export default function SessionsHistoryPage() {
   });
 
   const programName = (id: string) => programs.find((p) => p.id === id)?.name ?? id.slice(0, 8);
-  const participantName = (id: string) => {
+  const participantName = (id: string, session?: SessionListItem) => {
+    const fromSession = session?.participants?.find((p) => p.id === id);
+    if (fromSession) return `${fromSession.first_name} (${fromSession.code})`;
     const p = participants.find((p) => p.id === id);
-    return p ? `${p.first_name} (${p.code})` : id.slice(0, 8);
+    return p ? `${p.first_name} (${p.code})` : "Alumne";
   };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return sessions;
-    return sessions.filter(
-      (s) =>
-        programName(s.program_id).toLowerCase().includes(q) ||
-        (s.notes ?? "").toLowerCase().includes(q) ||
-        (s.notes_ai_summary ?? "").toLowerCase().includes(q) ||
-        (SESSION_TYPE_LABELS[s.session_type] ?? s.session_type).toLowerCase().includes(q)
-    );
+    let list = sessions;
+    if (q) {
+      list = sessions.filter(
+        (s) =>
+          programName(s.program_id).toLowerCase().includes(q) ||
+          (s.notes ?? "").toLowerCase().includes(q) ||
+          (s.notes_ai_summary ?? "").toLowerCase().includes(q) ||
+          (SESSION_TYPE_LABELS[s.session_type] ?? s.session_type).toLowerCase().includes(q) ||
+          (s.participants ?? []).some(
+            (p) =>
+              p.first_name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
+          )
+      );
+    }
+    return [...list].sort((a, b) => b.session_date.localeCompare(a.session_date));
   }, [sessions, search, programs]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -259,25 +287,64 @@ export default function SessionsHistoryPage() {
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const clearFilters = () => {
-    setFilterProgram(""); setFilterParticipant("");
+    setFilterProgram(""); setFilterSchool(""); setFilterParticipant("");
     setFilterDateFrom(""); setFilterDateTo(""); setSearch(""); setPage(1);
   };
 
-  const hasFilters = filterProgram || filterParticipant || filterDateFrom || filterDateTo || search;
+  const hasFilters =
+    filterProgram || filterSchool || filterParticipant || filterDateFrom || filterDateTo || search;
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Historial de sessions</h1>
-          <p className="page-subtitle">
-            {filtered.length} {filtered.length === 1 ? "sessió" : "sessions"}
-            {hasFilters ? " · filtrades" : " registrades"}
-          </p>
+    <div className={isVolunteer ? "vol-page" : "page-container"}>
+      {isVolunteer ? (
+        <VolunteerPageHeader
+          title="Historial"
+          subtitle={`${filtered.length} ${filtered.length === 1 ? "sessió" : "sessions"}${hasFilters ? " · filtrades" : ""}`}
+        />
+      ) : (
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Historial de sessions</h1>
+            <p className="page-subtitle">
+              {filtered.length} {filtered.length === 1 ? "sessió" : "sessions"}
+              {hasFilters ? " · filtrades" : " registrades"}
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Filters */}
+      {isVolunteer ? (
+        <div className="vol-filter-strip vol-filter-strip--compact">
+          <label className="premium-search">
+            <span className="premium-select-label">Cerca</span>
+            <span className="premium-search-field">
+              <Search size={18} strokeWidth={2} className="premium-search-icon" aria-hidden />
+              <input
+                type="search"
+                className="premium-search-input"
+                placeholder="Programa o notes…"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              />
+            </span>
+          </label>
+          <PremiumSelect
+            label="Programa"
+            value={filterProgram}
+            onChange={(v) => { setFilterProgram(v); setPage(1); }}
+            options={[
+              { value: "", label: "Tots" },
+              ...programs.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+          {hasFilters && (
+            <button type="button" className="vol-btn-back" onClick={clearFilters} style={{ width: "100%" }}>
+              <X size={16} aria-hidden />
+              Netejar filtres
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="sh-filters-bar">
         <div className="sh-filter-field sh-filter-search">
           <Search size={14} strokeWidth={2.5} className="sh-filter-icon" />
@@ -289,42 +356,68 @@ export default function SessionsHistoryPage() {
           />
         </div>
 
-        <select
-          className="sh-filter-select"
-          value={filterProgram}
-          onChange={(e) => { setFilterProgram(e.target.value); setPage(1); }}
-        >
-          <option value="">Tots els programes</option>
-          {programs.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        <label className="sh-filter-field">
+          <span className="sr-only">Programa</span>
+          <select
+            className="sh-filter-select"
+            value={filterProgram}
+            onChange={(e) => { setFilterProgram(e.target.value); setPage(1); }}
+          >
+            <option value="">Tots els programes</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
 
-        <select
-          className="sh-filter-select"
-          value={filterParticipant}
-          onChange={(e) => { setFilterParticipant(e.target.value); setPage(1); }}
-        >
-          <option value="">Tots els participants</option>
-          {participants.map((p) => (
-            <option key={p.id} value={p.id}>{p.first_name} ({p.code})</option>
-          ))}
-        </select>
+        <label className="sh-filter-field">
+          <span className="sr-only">Escola</span>
+          <select
+            className="sh-filter-select"
+            value={filterSchool}
+            onChange={(e) => { setFilterSchool(e.target.value); setPage(1); }}
+          >
+            <option value="">Totes les escoles</option>
+            {schools.map((s) => (
+              <option key={s.id} value={s.id}>{s.abbreviation}</option>
+            ))}
+          </select>
+        </label>
 
-        <input
-          type="date"
-          className="sh-filter-select"
-          value={filterDateFrom}
-          onChange={(e) => { setFilterDateFrom(e.target.value); setPage(1); }}
-          title="Des de"
-        />
-        <input
-          type="date"
-          className="sh-filter-select"
-          value={filterDateTo}
-          onChange={(e) => { setFilterDateTo(e.target.value); setPage(1); }}
-          title="Fins a"
-        />
+        <label className="sh-filter-field">
+          <span className="sr-only">Alumne</span>
+          <select
+            className="sh-filter-select"
+            value={filterParticipant}
+            onChange={(e) => { setFilterParticipant(e.target.value); setPage(1); }}
+          >
+            <option value="">Tots els alumnes</option>
+            {participants.map((p) => (
+              <option key={p.id} value={p.id}>{p.first_name} ({p.code})</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="sh-filter-field">
+          <span className="form-label" style={{ fontSize: "0.7rem" }}>Data inici</span>
+          <input
+            type="date"
+            className="sh-filter-select"
+            value={filterDateFrom}
+            placeholder="Data inici"
+            onChange={(e) => { setFilterDateFrom(e.target.value); setPage(1); }}
+          />
+        </label>
+        <label className="sh-filter-field">
+          <span className="form-label" style={{ fontSize: "0.7rem" }}>Data fi</span>
+          <input
+            type="date"
+            className="sh-filter-select"
+            value={filterDateTo}
+            placeholder="Data fi"
+            onChange={(e) => { setFilterDateTo(e.target.value); setPage(1); }}
+          />
+        </label>
 
         {hasFilters && (
           <button className="sh-filter-clear" onClick={clearFilters}>
@@ -333,8 +426,84 @@ export default function SessionsHistoryPage() {
           </button>
         )}
       </div>
+      )}
 
-      {/* Table */}
+      {isVolunteer ? (
+        <>
+          {isLoading ? (
+            <p className="vol-empty">Carregant sessions…</p>
+          ) : filtered.length === 0 ? (
+            <p className="vol-empty">Cap sessió coincideix amb els filtres.</p>
+          ) : (
+            <>
+            <div className="vol-history-list" role="list">
+              {pageItems.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="listitem"
+                  className="vol-history-card"
+                  onClick={() => setSelectedSession(s)}
+                >
+                  <div className="vol-history-card-accent" aria-hidden />
+                  <div className="vol-history-card-body">
+                    <div className="vol-history-card-top">
+                      <span className="vol-history-date">
+                        {new Date(s.session_date + "T12:00:00").toLocaleDateString("ca-ES", {
+                          weekday: "short",
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </span>
+                      <TypeChip type={s.session_type} />
+                    </div>
+                    <h3 className="vol-history-program">{programName(s.program_id)}</h3>
+                    <p className="vol-history-participants">
+                      <Users2 size={14} strokeWidth={2} aria-hidden />
+                      {formatSessionParticipants(s)}
+                    </p>
+                    <p className="vol-history-notes">
+                      {s.notes_ai_summary ?? s.notes ?? "Sense notes registrades"}
+                    </p>
+                    <div className="vol-history-meta">
+                      {s.duration_minutes ? (
+                        <span className="vol-history-pill">{s.duration_minutes} min</span>
+                      ) : null}
+                      <SentimentChip value={s.notes_sentiment} />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <div className="sh-pagination">
+                <span className="sh-pagination-info">
+                  {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} de {filtered.length}
+                </span>
+                <div className="sh-pagination-controls">
+                  <button
+                    className="sh-page-btn"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                    aria-label="Pàgina anterior"
+                  >
+                    <ChevronLeft size={14} strokeWidth={2.5} />
+                  </button>
+                  <button
+                    className="sh-page-btn"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    aria-label="Pàgina següent"
+                  >
+                    <ChevronRight size={14} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
+          )}
+        </>
+      ) : (
       <div className="card sh-table-card">
         {isLoading ? (
           <div className="table-empty">Carregant sessions…</div>
@@ -351,6 +520,7 @@ export default function SessionsHistoryPage() {
                     </span>
                   </th>
                   <th>Programa</th>
+                  <th>Alumnes</th>
                   <th>Tipus</th>
                   <th>
                     <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -375,6 +545,7 @@ export default function SessionsHistoryPage() {
                       })}
                     </td>
                     <td className="sh-td-program">{programName(s.program_id)}</td>
+                    <td className="sh-td-muted">{formatSessionParticipants(s)}</td>
                     <td><TypeChip type={s.session_type} /></td>
                     <td className="sh-td-muted">
                       {s.duration_minutes ? `${s.duration_minutes} min` : "—"}
@@ -440,6 +611,7 @@ export default function SessionsHistoryPage() {
           </>
         )}
       </div>
+      )}
 
       {/* Detail Drawer */}
       {selectedSession && (

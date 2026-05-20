@@ -11,14 +11,18 @@ from app.models.core import (
     Program,
     ProgramEnrollment,
     Report,
+    School,
     Session,
     SessionObservation,
     User,
+    UserParticipantAssignment,
 )
 
 __all__ = [
     "Organization",
+    "School",
     "User",
+    "UserParticipantAssignment",
     "Program",
     "ProgramEnrollment",
     "Participant",

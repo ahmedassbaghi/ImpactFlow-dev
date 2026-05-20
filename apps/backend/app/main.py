@@ -28,6 +28,7 @@ from app.analytics.cohort_analysis import (
 from app.analytics.reliability import compute_inter_rater_reliability
 from app.config import get_settings
 from app.database import Base, engine, get_db
+from app.migrations.migrate_v2 import run_migrations
 from app.models import (
     AttendanceRecord,
     BaselineAssessment,
@@ -39,10 +40,14 @@ from app.models import (
     ProgramMicroGoal,
     ProgramMicroGoalCompletion,
     Report,
+    School,
     Session,
     SessionObservation,
     User,
+    UserParticipantAssignment,
 )
+from app.routes.schools_and_assignments import router as schools_router
+from app.routes.schools_and_assignments import compute_sroi_for_program
 from app.schemas.api import (
     AssessmentInput,
     LoginRequest,
@@ -50,8 +55,11 @@ from app.schemas.api import (
     MicroGoalOut,
     ParseNoteRequest,
     PlanUpdateRequest,
+    LandingContentUpdate,
     ParticipantCreate,
+    ParticipantEnrollIn,
     ParticipantOut,
+    ParticipantUpdate,
     ProgramCreate,
     ProgramOut,
     ReportListItem,
@@ -59,7 +67,9 @@ from app.schemas.api import (
     ReportStatus,
     SessionCreate,
     SessionObservationOut,
+    SessionListOut,
     SessionOut,
+    SessionParticipantBrief,
     TokenResponse,
     UserCreateRequest,
     UserOut,
@@ -69,6 +79,16 @@ from app.services.report_generator import generate_quarterly_report, get_session
 from app.services.session_analytics_service import build_participant_feature_bundle
 from app.utils.auth import create_token, get_password_hash, verify_password
 from app.utils.deps import get_current_user, require_roles
+from app.utils.participant_code import next_participant_code
+from app.utils.access_control import (
+    assign_participant_to_professional,
+    assert_professional_assigned,
+    ensure_participant_access,
+    get_org_participant,
+    get_org_program,
+)
+from app.utils.participant_metrics import build_evolution_payload, upsert_periodic_from_observation
+from app.utils.participants import participant_to_out, participants_to_out_list
 
 settings = get_settings()
 
@@ -91,6 +111,10 @@ app.add_middleware(
 async def startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await run_migrations(engine)
+
+
+app.include_router(schools_router)
 
 
 @app.get("/")
@@ -274,44 +298,107 @@ async def delete_program(
     return
 
 
-@app.get(f"{settings.api_prefix}/sessions", response_model=list[SessionOut])
+@app.get(f"{settings.api_prefix}/sessions", response_model=list[SessionListOut])
 async def list_sessions(
     program_id: str | None = None,
     participant_id: str | None = None,
+    school_id: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[SessionOut]:
+) -> list[SessionListOut]:
     query = (
         select(Session)
         .join(Program, Program.id == Session.program_id)
         .where(Program.organization_id == current_user.organization_id)
     )
+    if current_user.role == "professional":
+        assign_q = await db.execute(
+            select(UserParticipantAssignment.participant_id).where(
+                UserParticipantAssignment.user_id == current_user.id
+            )
+        )
+        assigned_ids = [r[0] for r in assign_q.all()]
+        if not assigned_ids:
+            return []
+        obs_session_ids = select(SessionObservation.session_id).where(
+            SessionObservation.participant_id.in_(assigned_ids)
+        )
+        query = query.where(
+            (Session.professional_id == current_user.id)
+            | (Session.id.in_(obs_session_ids))
+        )
     if program_id:
         query = query.where(Session.program_id == program_id)
-    if participant_id:
-        query = query.join(
-            SessionObservation, SessionObservation.session_id == Session.id
-        ).where(SessionObservation.participant_id == participant_id)
+    if participant_id or school_id:
+        query = query.join(SessionObservation, SessionObservation.session_id == Session.id)
+        if participant_id:
+            query = query.where(SessionObservation.participant_id == participant_id)
+        if school_id:
+            query = query.join(Participant, Participant.id == SessionObservation.participant_id).where(
+                Participant.school_id == school_id
+            )
     if date_from:
         query = query.where(Session.session_date >= date_from)
     if date_to:
         query = query.where(Session.session_date <= date_to)
-    query = query.order_by(Session.session_date.desc()).limit(limit)
+    query = query.order_by(Session.session_date.desc(), Session.created_at.desc()).limit(limit)
     result = await db.execute(query)
-    return list(result.scalars().all())
+    sessions = list(result.unique().scalars().all())
+    if not sessions:
+        return []
+
+    session_ids = [s.id for s in sessions]
+    obs_q = await db.execute(
+        select(
+            SessionObservation.session_id,
+            Participant.id,
+            Participant.first_name,
+            Participant.code,
+        )
+        .join(Participant, Participant.id == SessionObservation.participant_id)
+        .where(SessionObservation.session_id.in_(session_ids))
+        .order_by(Participant.first_name)
+    )
+    by_session: dict[str, list[SessionParticipantBrief]] = {sid: [] for sid in session_ids}
+    seen: dict[str, set[str]] = {sid: set() for sid in session_ids}
+    for sid, pid, fname, code in obs_q.all():
+        if pid in seen[sid]:
+            continue
+        seen[sid].add(pid)
+        by_session[sid].append(SessionParticipantBrief(id=pid, first_name=fname, code=code))
+
+    return [
+        SessionListOut(
+            id=s.id,
+            program_id=s.program_id,
+            session_date=s.session_date,
+            session_type=s.session_type,
+            duration_minutes=s.duration_minutes,
+            notes=s.notes,
+            notes_ai_summary=s.notes_ai_summary,
+            notes_sentiment=s.notes_sentiment,
+            participants=by_session.get(s.id, []),
+        )
+        for s in sessions
+    ]
 
 
 @app.get(f"{settings.api_prefix}/participants", response_model=list[ParticipantOut])
 async def list_participants(
     program_id: str | None = None,
+    school_id: str | None = None,
+    not_in_program: str | None = Query(None, description="Program ID — return participants not actively enrolled"),
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[ParticipantOut]:
-    query = select(Participant).where(Participant.organization_id == current_user.organization_id)
+    query = select(Participant).where(
+        Participant.organization_id == current_user.organization_id,
+        Participant.active == True,
+    )
     if program_id:
         query = query.join(
             ProgramEnrollment, ProgramEnrollment.participant_id == Participant.id
@@ -319,8 +406,30 @@ async def list_participants(
             ProgramEnrollment.program_id == program_id,
             ProgramEnrollment.active == True,
         )
-    result = await db.execute(query.limit(limit))
-    return list(result.scalars().all())
+    if not_in_program:
+        await get_org_program(db, not_in_program, current_user.organization_id)
+        enrolled_subq = (
+            select(ProgramEnrollment.participant_id)
+            .where(
+                ProgramEnrollment.program_id == not_in_program,
+                ProgramEnrollment.active == True,
+            )
+        )
+        query = query.where(Participant.id.not_in(enrolled_subq))
+    if school_id:
+        query = query.where(Participant.school_id == school_id)
+    if current_user.role == "professional" and not not_in_program:
+        assign_q = await db.execute(
+            select(UserParticipantAssignment.participant_id).where(
+                UserParticipantAssignment.user_id == current_user.id
+            )
+        )
+        assigned_ids = [r[0] for r in assign_q.all()]
+        if not assigned_ids:
+            return []
+        query = query.where(Participant.id.in_(assigned_ids))
+    result = await db.execute(query.order_by(Participant.first_name).limit(limit))
+    return await participants_to_out_list(db, list(result.scalars().all()))
 
 
 # ── Program enrollment endpoints ──────────────────────────────────────────────
@@ -331,28 +440,45 @@ async def list_program_participants(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[ParticipantOut]:
-    result = await db.execute(
+    query = (
         select(Participant)
         .join(ProgramEnrollment, ProgramEnrollment.participant_id == Participant.id)
-        .where(ProgramEnrollment.program_id == program_id, ProgramEnrollment.active == True)
+        .where(
+            ProgramEnrollment.program_id == program_id,
+            ProgramEnrollment.active == True,
+            Participant.organization_id == current_user.organization_id,
+        )
     )
-    return list(result.scalars().all())
+    if current_user.role == "professional":
+        assign_q = await db.execute(
+            select(UserParticipantAssignment.participant_id).where(
+                UserParticipantAssignment.user_id == current_user.id
+            )
+        )
+        assigned_ids = [r[0] for r in assign_q.all()]
+        if assigned_ids:
+            query = query.where(Participant.id.in_(assigned_ids))
+        else:
+            return []
+    result = await db.execute(query)
+    return await participants_to_out_list(db, list(result.scalars().all()))
 
 
 @app.post(f"{settings.api_prefix}/programs/{{program_id}}/participants")
 async def enroll_participant(
     program_id: str,
-    payload: dict,
+    payload: ParticipantEnrollIn,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "coordinator")),
+    current_user: User = Depends(require_roles("admin", "coordinator", "professional")),
 ):
-    participant_id = payload.get("participant_id")
-    if not participant_id:
-        raise HTTPException(status_code=422, detail="participant_id required")
+    await get_org_program(db, program_id, current_user.organization_id)
+    participant = await get_org_participant(
+        db, payload.participant_id, current_user.organization_id
+    )
     existing = await db.execute(
         select(ProgramEnrollment).where(
             ProgramEnrollment.program_id == program_id,
-            ProgramEnrollment.participant_id == participant_id,
+            ProgramEnrollment.participant_id == payload.participant_id,
         )
     )
     enroll = existing.scalar_one_or_none()
@@ -361,12 +487,32 @@ async def enroll_participant(
     else:
         db.add(ProgramEnrollment(
             program_id=program_id,
-            participant_id=participant_id,
+            participant_id=payload.participant_id,
             enrolled_at=date.today(),
             active=True,
         ))
+    if current_user.role == "professional":
+        await assign_participant_to_professional(db, current_user.id, participant.id)
     await db.commit()
     return {"enrolled": True}
+
+
+@app.get(f"{settings.api_prefix}/participants/{{participant_id}}/programs", response_model=list[ProgramOut])
+async def list_participant_programs(
+    participant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ProgramOut]:
+    result = await db.execute(
+        select(Program)
+        .join(ProgramEnrollment, ProgramEnrollment.program_id == Program.id)
+        .where(
+            ProgramEnrollment.participant_id == participant_id,
+            ProgramEnrollment.active == True,
+            Program.organization_id == current_user.organization_id,
+        )
+    )
+    return list(result.scalars().all())
 
 
 @app.delete(f"{settings.api_prefix}/programs/{{program_id}}/participants/{{participant_id}}")
@@ -374,8 +520,10 @@ async def unenroll_participant(
     program_id: str,
     participant_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "coordinator")),
+    current_user: User = Depends(require_roles("admin", "coordinator", "professional")),
 ):
+    await get_org_program(db, program_id, current_user.organization_id)
+    await ensure_participant_access(db, current_user, participant_id)
     result = await db.execute(
         select(ProgramEnrollment).where(
             ProgramEnrollment.program_id == program_id,
@@ -393,11 +541,26 @@ async def unenroll_participant(
 async def create_participant(
     payload: ParticipantCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "coordinator", "professional")),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
 ) -> ParticipantOut:
+    school_q = await db.execute(
+        select(School).where(
+            School.id == payload.school_id,
+            School.organization_id == current_user.organization_id,
+        )
+    )
+    school = school_q.scalar_one_or_none()
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+
+    code = payload.code
+    if not code:
+        code = await next_participant_code(db, current_user.organization_id, payload.school_id)
+
     participant = Participant(
         organization_id=current_user.organization_id,
-        code=payload.code,
+        school_id=payload.school_id,
+        code=code,
         first_name=payload.first_name,
         birth_year=payload.birth_year,
         gender=payload.gender,
@@ -407,9 +570,92 @@ async def create_participant(
         is_control_group=payload.is_control_group,
     )
     db.add(participant)
+    await db.flush()
+    if payload.program_id:
+        await get_org_program(db, payload.program_id, current_user.organization_id)
+        db.add(
+            ProgramEnrollment(
+                program_id=payload.program_id,
+                participant_id=participant.id,
+                enrolled_at=payload.enrollment_date,
+                active=True,
+            )
+        )
+    if current_user.role == "professional":
+        await assign_participant_to_professional(db, current_user.id, participant.id)
     await db.commit()
     await db.refresh(participant)
-    return participant
+    return participant_to_out(participant, school)
+
+
+@app.get(f"{settings.api_prefix}/participants/{{participant_id}}", response_model=ParticipantOut)
+async def get_participant(
+    participant_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ParticipantOut:
+    result = await db.execute(
+        select(Participant, School)
+        .join(School, Participant.school_id == School.id)
+        .where(
+            Participant.id == participant_id,
+            Participant.organization_id == current_user.organization_id,
+        )
+    )
+    row = result.one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Participant not found")
+    participant, school = row
+    await assert_professional_assigned(db, current_user, participant_id)
+    return participant_to_out(participant, school)
+
+
+@app.patch(f"{settings.api_prefix}/participants/{{participant_id}}", response_model=ParticipantOut)
+async def update_participant(
+    participant_id: str,
+    payload: ParticipantUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
+) -> ParticipantOut:
+    result = await db.execute(
+        select(Participant).where(
+            Participant.id == participant_id,
+            Participant.organization_id == current_user.organization_id,
+        )
+    )
+    participant = result.scalar_one_or_none()
+    if not participant:
+        raise HTTPException(status_code=404, detail="Participant not found")
+    school = None
+    if payload.school_id is not None:
+        school_q = await db.execute(
+            select(School).where(
+                School.id == payload.school_id,
+                School.organization_id == current_user.organization_id,
+            )
+        )
+        school = school_q.scalar_one_or_none()
+        if not school:
+            raise HTTPException(status_code=404, detail="School not found")
+        participant.school_id = payload.school_id
+    if payload.first_name is not None:
+        participant.first_name = payload.first_name
+    if payload.code is not None:
+        participant.code = payload.code
+    if payload.birth_year is not None:
+        participant.birth_year = payload.birth_year
+    if payload.gender is not None:
+        participant.gender = payload.gender
+    if payload.nationality is not None:
+        participant.nationality = payload.nationality
+    if payload.active is not None:
+        participant.active = payload.active
+    await db.commit()
+    await db.refresh(participant)
+    if school is None:
+        school_q = await db.execute(select(School).where(School.id == participant.school_id))
+        school = school_q.scalar_one_or_none()
+    return participant_to_out(participant, school)
 
 
 @app.post(f"{settings.api_prefix}/participants/{{participant_id}}/baseline")
@@ -461,36 +707,84 @@ async def create_baseline_assessment(
 @app.get(f"{settings.api_prefix}/participants/{{participant_id}}/evolution")
 async def participant_evolution(
     participant_id: str,
+    program_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    baseline_q = await db.execute(
-        select(BaselineAssessment).where(BaselineAssessment.participant_id == participant_id).limit(1)
+    row_q = await db.execute(
+        select(Participant, School)
+        .join(School, Participant.school_id == School.id)
+        .where(
+            Participant.id == participant_id,
+            Participant.organization_id == current_user.organization_id,
+        )
     )
-    baseline = baseline_q.scalar_one_or_none()
+    row = row_q.one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Participant not found")
+    participant, school = row
+    await assert_professional_assigned(db, current_user, participant_id)
 
-    periodic_q = await db.execute(
+    resolved_program_id = program_id
+    if not resolved_program_id:
+        latest_pa_q = await db.execute(
+            select(PeriodicAssessment.program_id)
+            .where(PeriodicAssessment.participant_id == participant_id)
+            .order_by(PeriodicAssessment.assessment_date.desc())
+            .limit(1)
+        )
+        resolved_program_id = latest_pa_q.scalar_one_or_none()
+        if not resolved_program_id:
+            enroll_q = await db.execute(
+                select(ProgramEnrollment.program_id)
+                .where(
+                    ProgramEnrollment.participant_id == participant_id,
+                    ProgramEnrollment.active.is_(True),
+                )
+                .limit(1)
+            )
+            resolved_program_id = enroll_q.scalar_one_or_none()
+
+    baseline = None
+    if resolved_program_id:
+        baseline_q = await db.execute(
+            select(BaselineAssessment).where(
+                BaselineAssessment.participant_id == participant_id,
+                BaselineAssessment.program_id == resolved_program_id,
+            )
+        )
+        baseline = baseline_q.scalar_one_or_none()
+    else:
+        baseline_q = await db.execute(
+            select(BaselineAssessment)
+            .where(BaselineAssessment.participant_id == participant_id)
+            .limit(1)
+        )
+        baseline = baseline_q.scalar_one_or_none()
+        if baseline:
+            resolved_program_id = baseline.program_id
+
+    periodic_stmt = (
         select(PeriodicAssessment)
         .where(PeriodicAssessment.participant_id == participant_id)
         .order_by(PeriodicAssessment.assessment_date)
     )
+    if resolved_program_id:
+        periodic_stmt = periodic_stmt.where(PeriodicAssessment.program_id == resolved_program_id)
+    periodic_q = await db.execute(periodic_stmt)
     periodic = list(periodic_q.scalars().all())
-    historical_ipi = [p.ipi_score for p in periodic]
-    dates = [p.assessment_date for p in periodic]
-    prediction = predict_next_ipi(historical_ipi, dates)
-    return {
-        "baseline_ipi": baseline.ipi_baseline if baseline else None,
-        "timeline": [
-            {
-                "date": p.assessment_date,
-                "ipi_score": p.ipi_score,
-                "delta_vs_baseline": p.ipi_delta_vs_baseline,
-                "risk_level": p.risk_level,
-            }
-            for p in periodic
-        ],
-        "prediction": prediction,
-    }
+
+    return build_evolution_payload(
+        participant_id=participant_id,
+        code=participant.code,
+        first_name=participant.first_name,
+        school_abbreviation=school.abbreviation,
+        school_name=school.name,
+        enrollment_date=participant.enrollment_date,
+        program_id=resolved_program_id,
+        baseline=baseline,
+        periodic=periodic,
+    )
 
 
 @app.get(f"{settings.api_prefix}/participants/{{participant_id}}/risk")
@@ -603,64 +897,13 @@ async def create_session(
                 active=True,
             ))
 
-        # Auto-create PeriodicAssessment if none exists for this participant+program+date
-        existing_pa = await db.execute(
-            select(PeriodicAssessment).where(
-                PeriodicAssessment.participant_id == obs.participant_id,
-                PeriodicAssessment.program_id == payload.program_id,
-                PeriodicAssessment.assessment_date == payload.session_date,
-            )
-        )
-        if existing_pa.scalar_one_or_none():
-            continue
-
-        ac, cog, soc, integ = obs.academic_score, obs.cognitive_score, obs.social_score, obs.integration_score
-        dim = DimensionScores(
-            reading_level=ac, math_level=ac, comprehension_level=ac,
-            attention_level=cog, memory_level=cog, autonomy_level=cog,
-            peer_interaction=soc, group_work=soc, emotional_regulation=soc,
-            language_fluency=integ, cultural_adaptation=integ,
-        )
-        ipi_result = calculate_ipi(dim)
-        ipi_score = ipi_result["ipi"]
-        if ipi_score is None:
-            continue
-
-        bl_q = await db.execute(
-            select(BaselineAssessment.ipi_baseline).where(
-                BaselineAssessment.participant_id == obs.participant_id,
-                BaselineAssessment.program_id == payload.program_id,
-            )
-        )
-        baseline_ipi = bl_q.scalar_one_or_none() or 0.0
-        delta = round(ipi_score - float(baseline_ipi), 2) if baseline_ipi else None
-
-        risk_result = calculate_risk_score(
-            attendance_rate_last_30d=1.0 if (obs.attendance_status or "") == "present" else 0.5,
-            attendance_rate_prev_30d=0.8,
-            ipi_delta_last_period=delta,
-            days_since_last_session=0,
-            micro_goals_completion_rate=0.5,
-            num_unjustified_absences_last_30d=0,
-            avg_mood_last_5_sessions=None,
-            weeks_in_program=4,
-        )
-
-        db.add(PeriodicAssessment(
-            participant_id=obs.participant_id,
+        await upsert_periodic_from_observation(
+            db,
+            obs=obs,
             program_id=payload.program_id,
+            session_date=payload.session_date,
             assessed_by=current_user.id,
-            assessment_date=payload.session_date,
-            period_label="session_auto",
-            reading_level=ac, math_level=ac, comprehension_level=ac,
-            attention_level=cog, memory_level=cog, autonomy_level=cog,
-            peer_interaction=soc, group_work=soc, emotional_regulation=soc,
-            language_fluency=integ, cultural_adaptation=integ,
-            ipi_score=ipi_score,
-            ipi_delta_vs_baseline=delta,
-            risk_score=risk_result["risk_score"],
-            risk_level=risk_result["risk_level"],
-        ))
+        )
 
     await db.commit()
     await db.refresh(session)
@@ -865,13 +1108,110 @@ async def cohort_comparison(
 
 @app.get(f"{settings.api_prefix}/dashboard/professional")
 async def professional_dashboard(
+    program_id: str | None = None,
+    school_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("professional", "coordinator", "admin")),
 ):
+    part_filters = [Participant.organization_id == current_user.organization_id, Participant.active == True]
+    if school_id:
+        part_filters.append(Participant.school_id == school_id)
+    if current_user.role == "professional":
+        assign_q = await db.execute(
+            select(UserParticipantAssignment.participant_id).where(
+                UserParticipantAssignment.user_id == current_user.id
+            )
+        )
+        assigned_ids = [r[0] for r in assign_q.all()]
+        if assigned_ids:
+            part_filters.append(Participant.id.in_(assigned_ids))
+
+    participants_q = await db.execute(select(Participant).where(*part_filters))
+    participants = list(participants_q.scalars().all())
+    pids = [p.id for p in participants]
+
+    avg_ipi = 0.0
+    trend: list[dict] = []
+    by_school: list[dict] = []
+    by_program: list[dict] = []
+
+    if pids:
+        ipi_filters = [PeriodicAssessment.participant_id.in_(pids)]
+        if program_id:
+            ipi_filters.append(PeriodicAssessment.program_id == program_id)
+        ipi_q = await db.execute(
+            select(func.avg(PeriodicAssessment.ipi_score)).where(*ipi_filters)
+        )
+        avg_ipi = round(float(ipi_q.scalar_one() or 0), 1)
+
+    if pids and program_id:
+        start_date = date.today() - timedelta(days=180)
+        trend_q = await db.execute(
+            select(PeriodicAssessment.assessment_date, func.avg(PeriodicAssessment.ipi_score))
+            .where(
+                PeriodicAssessment.program_id == program_id,
+                PeriodicAssessment.participant_id.in_(pids),
+                PeriodicAssessment.assessment_date >= start_date,
+            )
+            .group_by(PeriodicAssessment.assessment_date)
+            .order_by(PeriodicAssessment.assessment_date)
+        )
+        trend = [
+            {"period": row[0].isoformat(), "avg_ipi": round(float(row[1] or 0), 1)}
+            for row in trend_q.all()
+        ]
+
+    school_stmt = (
+        select(School.id, School.name, School.abbreviation, func.avg(PeriodicAssessment.ipi_score))
+        .join(Participant, Participant.school_id == School.id)
+        .where(School.organization_id == current_user.organization_id)
+    )
+    if program_id:
+        school_stmt = school_stmt.outerjoin(
+            PeriodicAssessment,
+            (PeriodicAssessment.participant_id == Participant.id)
+            & (PeriodicAssessment.program_id == program_id),
+        )
+    else:
+        school_stmt = school_stmt.outerjoin(
+            PeriodicAssessment, PeriodicAssessment.participant_id == Participant.id
+        )
+    schools_q = await db.execute(
+        school_stmt.group_by(School.id, School.name, School.abbreviation)
+    )
+    by_school = [
+        {
+            "school_id": row[0],
+            "name": row[1],
+            "abbreviation": row[2],
+            "avg_ipi": round(float(row[3] or 0), 1),
+        }
+        for row in schools_q.all()
+    ]
+
+    if program_id:
+        programs_q = await db.execute(
+            select(Program.id, Program.name, func.avg(PeriodicAssessment.ipi_score))
+            .join(PeriodicAssessment, PeriodicAssessment.program_id == Program.id)
+            .where(Program.organization_id == current_user.organization_id)
+            .group_by(Program.id, Program.name)
+        )
+        by_program = [
+            {"program_id": row[0], "name": row[1], "avg_ipi": round(float(row[2] or 0), 1)}
+            for row in programs_q.all()
+        ]
+
     recent_sessions = await db.execute(
         select(Session).where(Session.professional_id == current_user.id).order_by(Session.session_date.desc()).limit(10)
     )
-    return {"my_recent_sessions": [s.id for s in recent_sessions.scalars().all()]}
+    return {
+        "my_recent_sessions": [s.id for s in recent_sessions.scalars().all()],
+        "avg_ipi": avg_ipi,
+        "trend": trend,
+        "by_school": by_school,
+        "by_program": by_program,
+        "n_participants": len(participants),
+    }
 
 
 @app.get(f"{settings.api_prefix}/dashboard/coordinator")
@@ -1897,72 +2237,7 @@ async def analytics_sroi(
     current_user: User = Depends(get_current_user),
 ):
     """Modulo E — Calcul SROI seguint SROI Network Standard (2012)."""
-    # ── Total enrolled: all participants that have ever appeared in this program ──
-    enrolled_q = await db.execute(
-        select(func.count(func.distinct(BaselineAssessment.participant_id)))
-        .where(BaselineAssessment.program_id == program_id)
-    )
-    n_enrolled = enrolled_q.scalar_one() or 0
-
-    # Fallback: count distinct participants in session observations for this program
-    if n_enrolled == 0:
-        obs_q = await db.execute(
-            select(func.count(func.distinct(SessionObservation.participant_id)))
-            .join(Session, Session.id == SessionObservation.session_id)
-            .where(Session.program_id == program_id)
-        )
-        n_enrolled = obs_q.scalar_one() or 1
-
-    # ── IPI gain: only participants with both baseline and periodic assessment ──
-    def _dim_avg(vals):
-        valid = [float(v) for v in vals if v is not None]
-        return (sum(valid) / len(valid) - 1) / 4 * 100 if valid else 0.0
-
-    baseline_q = await db.execute(
-        select(BaselineAssessment).where(BaselineAssessment.program_id == program_id)
-    )
-    baselines = baseline_q.scalars().all()
-
-    baseline_ipis = []
-    for b in baselines:
-        academic = _dim_avg([b.reading_level, b.math_level, b.comprehension_level])
-        cognitive = _dim_avg([b.attention_level, b.memory_level, b.autonomy_level])
-        social = _dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation])
-        integration = _dim_avg([b.language_fluency, b.cultural_adaptation])
-        baseline_ipis.append(academic * 0.30 + cognitive * 0.20 + social * 0.30 + integration * 0.20)
-
-    latest_q = await db.execute(
-        select(PeriodicAssessment.participant_id, PeriodicAssessment.ipi_score)
-        .where(PeriodicAssessment.program_id == program_id)
-        .order_by(PeriodicAssessment.assessment_date.desc())
-    )
-    seen: set = set()
-    current_ipis = []
-    for row in latest_q.all():
-        if row.participant_id not in seen and row.ipi_score:
-            seen.add(row.participant_id)
-            current_ipis.append(float(row.ipi_score))
-
-    avg_baseline = sum(baseline_ipis) / len(baseline_ipis) if baseline_ipis else 0.0
-    avg_current = sum(current_ipis) / len(current_ipis) if current_ipis else avg_baseline
-    avg_ipi_gain = max(0.0, avg_current - avg_baseline)
-
-    # ── Sessions: use actual DB count but floor at months×3 (3 sessions/month min) ──
-    sessions_q = await db.execute(
-        select(func.count(Session.id)).where(Session.program_id == program_id)
-    )
-    n_sessions_actual = sessions_q.scalar_one() or 0
-    # Floor: at least 3 sessions/month (typical socio-educational programme cadence).
-    # Prevents undervaluing programmes with good attendance but sparse session records.
-    n_sessions = max(n_sessions_actual, months * 3)
-
-    return calculate_sroi(
-        n_participants=n_enrolled,
-        avg_ipi_gain=avg_ipi_gain,
-        program_cost_eur=cost_eur,
-        program_duration_months=months,
-        extra={"sessions": n_sessions, "avg_duration_h": 1.5},
-    )
+    return await compute_sroi_for_program(db, program_id, cost_eur, months)
 
 
 @app.get(f"{settings.api_prefix}/analytics/inter-rater-reliability")
@@ -2258,8 +2533,7 @@ async def analytics_evidence_export(
     p_start = date.fromisoformat(period_start) if period_start else (date.today() - timedelta(days=365))
     p_end = date.fromisoformat(period_end) if period_end else date.today()
 
-    prog_q = await db.execute(select(Program).where(Program.id == program_id))
-    prog = prog_q.scalar_one_or_none()
+    prog = await get_org_program(db, program_id, current_user.organization_id)
     program_meta = {
         "program_id": program_id,
         "program_name": prog.name if prog else "Unknown",

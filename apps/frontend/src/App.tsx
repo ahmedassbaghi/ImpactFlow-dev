@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { AppShell } from "./components/layout/AppShell";
+import { RoleLayout } from "./components/layout/MobileShell";
 import LoginPage from "./pages/Login";
 import AdminControlCenterPage from "./pages/admin/AdminControlCenter";
 import OverviewPage from "./pages/Overview";
@@ -10,11 +10,16 @@ import ParticipantsPage from "./pages/coordinator/ParticipantsPage";
 import ParticipantProfile from "./pages/coordinator/ParticipantProfile";
 import PlansPage from "./pages/coordinator/PlansPage";
 import UsersRolesPage from "./pages/coordinator/UsersRolesPage";
+import SchoolsPage from "./pages/coordinator/SchoolsPage";
+import GestioPage from "./pages/coordinator/GestioPage";
+import LandingEditorPage from "./pages/coordinator/LandingEditorPage";
 import ImpactPortalPage from "./pages/donor/ImpactPortal";
 import SessionLoggerPage from "./pages/professional/SessionLogger";
 import ProgramsPage from "./pages/coordinator/ProgramsPage";
 import SessionsHistoryPage from "./pages/coordinator/SessionsHistoryPage";
 import AdvancedAnalyticsPage from "./pages/coordinator/AdvancedAnalyticsPage";
+import ProgressPage from "./pages/voluntari/ProgressPage";
+import SeguimentPage from "./pages/voluntari/SeguimentPage";
 import { useAuthStore } from "./stores/authStore";
 
 function ProtectedRoute({
@@ -28,7 +33,7 @@ function ProtectedRoute({
   const token = useAuthStore((s) => s.accessToken);
   if (!token) return <Navigate to="/login" replace />;
   if (role && !allowedRoles.includes(role)) return <Navigate to="/donor/impact-portal" replace />;
-  return <>{children}</>;
+  return <RoleLayout>{children}</RoleLayout>;
 }
 
 export default function App() {
@@ -39,19 +44,18 @@ export default function App() {
       : role === "admin"
         ? "/admin/control-center"
         : role === "coordinator"
-        ? "/coordinator/dashboard"
-        : "/donor/impact-portal";
+          ? "/coordinator/dashboard"
+          : "/donor/impact-portal";
 
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/voluntari/session-logger" element={<Navigate to="/professional/session-logger" replace />} />
       <Route
         path="/admin/control-center"
         element={
           <ProtectedRoute allowedRoles={["admin"]}>
-            <AppShell>
-              <AdminControlCenterPage />
-            </AppShell>
+            <AdminControlCenterPage />
           </ProtectedRoute>
         }
       />
@@ -59,9 +63,7 @@ export default function App() {
         path="/overview"
         element={
           <ProtectedRoute allowedRoles={["professional", "coordinator", "admin", "donor", "viewer"]}>
-            <AppShell>
-              <OverviewPage />
-            </AppShell>
+            <OverviewPage />
           </ProtectedRoute>
         }
       />
@@ -69,9 +71,23 @@ export default function App() {
         path="/professional/session-logger"
         element={
           <ProtectedRoute allowedRoles={["professional", "coordinator", "admin"]}>
-            <AppShell>
-              <SessionLoggerPage />
-            </AppShell>
+            <SessionLoggerPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/voluntari/progress"
+        element={
+          <ProtectedRoute allowedRoles={["professional", "coordinator", "admin"]}>
+            <ProgressPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/voluntari/seguiment"
+        element={
+          <ProtectedRoute allowedRoles={["professional", "coordinator", "admin"]}>
+            <SeguimentPage />
           </ProtectedRoute>
         }
       />
@@ -79,9 +95,31 @@ export default function App() {
         path="/coordinator/dashboard"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
-            <AppShell>
-              <ProgramDashboardPage />
-            </AppShell>
+            <ProgramDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/schools"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <SchoolsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/gestio"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <GestioPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/landing"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <LandingEditorPage />
           </ProtectedRoute>
         }
       />
@@ -89,9 +127,7 @@ export default function App() {
         path="/coordinator/reports"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
-            <AppShell>
-              <ReportsPage />
-            </AppShell>
+            <ReportsPage />
           </ProtectedRoute>
         }
       />
@@ -99,9 +135,7 @@ export default function App() {
         path="/coordinator/micro-goals"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
-            <AppShell>
-              <MicroGoalsPage />
-            </AppShell>
+            <MicroGoalsPage />
           </ProtectedRoute>
         }
       />
@@ -109,9 +143,7 @@ export default function App() {
         path="/coordinator/participants"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
-            <AppShell>
-              <ParticipantsPage />
-            </AppShell>
+            <ParticipantsPage />
           </ProtectedRoute>
         }
       />
@@ -119,9 +151,7 @@ export default function App() {
         path="/coordinator/participants/:participantId"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
-            <AppShell>
-              <ParticipantProfile />
-            </AppShell>
+            <ParticipantProfile />
           </ProtectedRoute>
         }
       />
@@ -129,9 +159,7 @@ export default function App() {
         path="/coordinator/programs"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
-            <AppShell>
-              <ProgramsPage />
-            </AppShell>
+            <ProgramsPage />
           </ProtectedRoute>
         }
       />
@@ -139,9 +167,7 @@ export default function App() {
         path="/coordinator/sessions"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin", "professional"]}>
-            <AppShell>
-              <SessionsHistoryPage />
-            </AppShell>
+            <SessionsHistoryPage />
           </ProtectedRoute>
         }
       />
@@ -149,9 +175,7 @@ export default function App() {
         path="/coordinator/advanced"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
-            <AppShell>
-              <AdvancedAnalyticsPage />
-            </AppShell>
+            <AdvancedAnalyticsPage />
           </ProtectedRoute>
         }
       />
@@ -159,9 +183,7 @@ export default function App() {
         path="/coordinator/users"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
-            <AppShell>
-              <UsersRolesPage />
-            </AppShell>
+            <UsersRolesPage />
           </ProtectedRoute>
         }
       />
@@ -169,18 +191,16 @@ export default function App() {
         path="/settings/plans"
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
-            <AppShell>
-              <PlansPage />
-            </AppShell>
+            <PlansPage />
           </ProtectedRoute>
         }
       />
       <Route
         path="/donor/impact-portal"
         element={
-          <AppShell>
+          <RoleLayout>
             <ImpactPortalPage />
-          </AppShell>
+          </RoleLayout>
         }
       />
       <Route path="*" element={<Navigate to={defaultPath} replace />} />

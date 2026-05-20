@@ -1,0 +1,195 @@
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Mobile-first shell for voluntari, donant i login */
+.mobile-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  font-size: 17px;
+}
+
+.mobile-shell--volunteer {
+  padding-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-shell-header {
+  flex-shrink: 0;
+}
+
+.mobile-shell-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1rem 1rem 1.5rem;
+}
+
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 0.25rem;
+  padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
+}
+
+.mobile-nav-link {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 48px;
+  padding: 0.35rem 0.25rem;
+  border-radius: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.68rem;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mobile-nav-link:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+}
+
+.mobile-nav-link.active {
+  color: var(--brand-600);
+  background: var(--brand-50);
+}
+
+.mobile-nav-link--primary {
+  color: var(--brand-600);
+}
+
+.mobile-nav-link--primary.active {
+  background: var(--brand-100);
+}
+
+.mobile-nav-link--primary .mobile-nav-icon-wrap {
+  background: var(--brand-500);
+  color: #fff;
+  border-radius: 50%;
+  padding: 0.45rem;
+  margin-top: -0.5rem;
+}
+
+.school-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: var(--brand-100);
+  color: var(--brand-700);
+  font-family: ui-monospace, monospace;
+}
+
+.school-badge--empty {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.ql-date-banner {
+  margin: 0.5rem 1rem 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-200);
+  color: var(--brand-800);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.ql-textarea {
+  min-height: 140px !important;
+}
+
+.donor-photo-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.donor-photo-grid img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.donor-accordion {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  background: var(--surface-1);
+}
+
+.donor-accordion summary {
+  padding: 0.85rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.donor-accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+.donor-accordion-body {
+  padding: 0 1rem 1rem;
+}
+
+.login-form-panel .form-input,
+.login-form-panel .login-submit-btn {
+  min-height: 52px;
+  font-size: 1.05rem;
+}
+
+.login-form-panel .login-title {
+  font-size: 1.75rem;
+}
+
+@media (min-width: 720px) {
+  .donor-photo-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .mobile-shell-main {
+    max-width: 720px;
+  }
+}

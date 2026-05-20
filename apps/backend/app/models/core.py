@@ -22,8 +22,27 @@ class Organization(Base):
     slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     logo_url: Mapped[Optional[str]] = mapped_column(String)
     plan: Mapped[str] = mapped_column(String, default="free")
+    participant_code_pattern: Mapped[Optional[str]] = mapped_column(
+        String, default="{abbr}-{year}-{seq:03}"
+    )
+    landing_content: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class School(Base):
+    __tablename__ = "schools"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    abbreviation: Mapped[str] = mapped_column(String, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("organization_id", "abbreviation"),)
 
 
 class User(Base):
@@ -54,11 +73,25 @@ class Program(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class UserParticipantAssignment(Base):
+    __tablename__ = "user_participant_assignments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "participant_id"),)
+
+
 class Participant(Base):
     __tablename__ = "participants"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    school_id: Mapped[str] = mapped_column(ForeignKey("schools.id"), nullable=False)
     code: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     birth_year: Mapped[Optional[int]] = mapped_column(Integer)

@@ -8,16 +8,45 @@ export type Participant = {
   enrollment_date: string;
   is_control_group: boolean;
   active: boolean;
+  school_id: string;
+  school_name?: string;
+  school_abbreviation?: string;
 };
 
-export async function listParticipants(programId?: string): Promise<Participant[]> {
-  const { data } = await apiClient.get<Participant[]>("/participants", { params: { program_id: programId } });
+export async function listParticipants(params?: {
+  programId?: string;
+  schoolId?: string;
+  notInProgram?: string;
+}): Promise<Participant[]> {
+  const { data } = await apiClient.get<Participant[]>("/participants", {
+    params: {
+      program_id: params?.programId,
+      school_id: params?.schoolId,
+      not_in_program: params?.notInProgram,
+    },
+  });
   return data;
 }
 
+export async function updateParticipant(
+  id: string,
+  payload: Partial<{ school_id: string; first_name: string; code: string; active: boolean }>
+) {
+  const { data } = await apiClient.patch<Participant>(`/participants/${id}`, payload);
+  return data;
+}
+
+export async function previewNextCode(schoolId: string): Promise<string> {
+  const { data } = await apiClient.post<{ code: string }>("/participants/next-code", null, {
+    params: { school_id: schoolId },
+  });
+  return data.code;
+}
+
 export async function createParticipant(payload: {
-  program_id: string;
-  code: string;
+  program_id?: string;
+  school_id: string;
+  code?: string;
   first_name: string;
   birth_year?: number;
   gender?: string;
@@ -53,8 +82,44 @@ export async function createBaseline(participantId: string, payload: BaselinePay
   return data;
 }
 
-export async function getParticipantEvolution(participantId: string) {
-  const { data } = await apiClient.get(`/participants/${participantId}/evolution`);
+export type ParticipantEvolution = {
+  participant_id: string;
+  program_id?: string | null;
+  code: string;
+  first_name: string;
+  school_abbreviation?: string | null;
+  school_name?: string | null;
+  baseline_ipi: number | null;
+  current_ipi: number | null;
+  history?: Array<{
+    date: string;
+    period_label?: string;
+    ipi_score: number;
+    delta_vs_baseline?: number | null;
+    risk_level?: string | null;
+  }>;
+  timeline?: Array<{
+    date: string;
+    period_label?: string;
+    ipi_score: number;
+  }>;
+  dimensions_baseline?: Record<string, number | null>;
+  dimensions_current?: Record<string, number | null>;
+  weeks_in_program?: number | null;
+  trend?: string;
+  prediction?: { predicted_ipi?: number | null; trend?: string };
+};
+
+export async function getParticipant(participantId: string): Promise<Participant> {
+  const { data } = await apiClient.get<Participant>(`/participants/${participantId}`);
+  return data;
+}
+
+export async function getParticipantEvolution(participantId: string, programId?: string) {
+  const { data } = await apiClient.get<ParticipantEvolution>(
+    `/participants/${participantId}/evolution`,
+    { params: programId ? { program_id: programId } : undefined }
+  );
   return data;
 }
 
@@ -97,6 +162,11 @@ export async function getParticipantSegments(programId: string) {
     params: { program_id: programId },
   });
   return data;
+}
+
+export async function getParticipantPrograms(participantId: string) {
+  const { data } = await apiClient.get(`/participants/${participantId}/programs`);
+  return data as Array<{ id: string; name: string; active: boolean }>;
 }
 
 export async function getEnrolledParticipants(programId: string): Promise<Participant[]> {

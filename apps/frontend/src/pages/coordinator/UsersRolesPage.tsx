@@ -1,12 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { createUser, listUsers } from "../../api/users";
+import { Users, X } from "lucide-react";
+import { listParticipants } from "../../api/participants";
+import { createUser, getUserAssignments, listUsers, setUserAssignments } from "../../api/users";
+import { SchoolBadge } from "../../components/common/SchoolBadge";
+import { toast } from "../../stores/toastStore";
 
 export default function UsersRolesPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ["users"],
-    queryFn: listUsers,
+  const { data, isLoading } = useQuery({ queryKey: ["users"], queryFn: listUsers });
+  const { data: allParticipants = [] } = useQuery({
+    queryKey: ["participants"],
+    queryFn: () => listParticipants(),
   });
 
   const [form, setForm] = useState({
@@ -16,70 +21,193 @@ export default function UsersRolesPage() {
     password: "",
   });
 
+  const [assignUserId, setAssignUserId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+
+  const { data: assigned = [] } = useQuery({
+    queryKey: ["user-assignments", assignUserId],
+    queryFn: () => getUserAssignments(assignUserId!),
+    enabled: !!assignUserId,
+  });
+
   const createMutation = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setForm({ email: "", full_name: "", role: "professional", password: "" });
+      toast.success("Usuari creat");
     },
   });
 
+  const saveAssignments = useMutation({
+    mutationFn: () => setUserAssignments(assignUserId!, selectedIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-assignments", assignUserId] });
+      toast.success("Assignacions desades");
+      setAssignUserId(null);
+    },
+  });
+
+  const openAssign = (userId: string) => {
+    setAssignUserId(userId);
+    setSelectedIds([]);
+    setSearch("");
+  };
+
+  const volunteers = (data ?? []).filter((u) => u.role === "professional");
+
+  const filteredParticipants = allParticipants.filter((p) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.first_name.toLowerCase().includes(q) ||
+      p.code.toLowerCase().includes(q) ||
+      (p.school_abbreviation ?? "").toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <div className="grid">
+    <div className="page-container">
       <div className="page-header">
-        <h1 style={{ margin: 0 }}>Gestión de usuarios y roles</h1>
+        <h1 className="page-title">Usuaris i assignacions</h1>
+        <p className="page-subtitle">Gestiona voluntaris i assigna alumnes</p>
       </div>
 
-      <div className="card">
-        <h3>Crear nuevo usuario</h3>
-        <div className="grid grid-2">
+      <div className="card" style={{ padding: "1.25rem", marginBottom: "1rem" }}>
+        <h3 style={{ marginTop: 0 }}>Crear usuari</h3>
+        <div className="form-grid-2">
           <label>
-            Nombre completo
-            <input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} />
+            Nom complet
+            <input
+              className="form-input"
+              value={form.full_name}
+              onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))}
+            />
           </label>
           <label>
             Email
-            <input value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+            <input
+              className="form-input"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+            />
           </label>
           <label>
             Rol
-            <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}>
-              <option value="admin">admin</option>
+            <select
+              className="form-select"
+              value={form.role}
+              onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
+            >
               <option value="coordinator">coordinator</option>
-              <option value="professional">professional</option>
+              <option value="professional">voluntari (professional)</option>
               <option value="donor">donor</option>
-              <option value="viewer">viewer</option>
+              <option value="admin">admin</option>
             </select>
           </label>
           <label>
-            Contraseña
+            Contrasenya
             <input
+              className="form-input"
               type="password"
               value={form.password}
               onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
             />
           </label>
         </div>
-        <button style={{ marginTop: "0.9rem" }} onClick={() => createMutation.mutate(form)}>
-          {createMutation.isPending ? "Creando..." : "Crear usuario"}
+        <button type="button" className="btn-primary" style={{ marginTop: "0.9rem" }} onClick={() => createMutation.mutate(form)}>
+          {createMutation.isPending ? "Creant…" : "Crear usuari"}
         </button>
       </div>
 
-      <div className="card">
-        <h3>Usuarios activos</h3>
-        {isLoading && <p className="muted">Cargando...</p>}
-        {!!data?.length && (
-          <div className="grid">
-            {data.map((u) => (
-              <div key={u.id} className="card" style={{ background: "#fcfcff" }}>
-                <strong>{u.full_name}</strong>
-                <div className="muted">{u.email}</div>
-                <span className="chip">{u.role}</span>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="card" style={{ padding: "1.25rem" }}>
+        <h3 style={{ marginTop: 0 }}>Voluntaris</h3>
+        {isLoading && <p className="muted">Carregant…</p>}
+        <div className="programs-grid">
+          {volunteers.map((u) => (
+            <div key={u.id} className="program-card">
+              <strong>{u.full_name}</strong>
+              <div className="muted" style={{ fontSize: "0.85rem" }}>{u.email}</div>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ marginTop: "0.75rem" }}
+                onClick={() => {
+                  openAssign(u.id);
+                  getUserAssignments(u.id).then((list) => setSelectedIds(list.map((p) => p.id)));
+                }}
+              >
+                <Users size={14} /> Assignar alumnes
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {assignUserId && (
+        <div className="modal-overlay" onClick={() => setAssignUserId(null)}>
+          <div className="modal-content modal-content--md" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Assignar alumnes al voluntari</h2>
+              <button type="button" className="modal-close-btn" onClick={() => setAssignUserId(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <input
+                className="form-input"
+                placeholder="Cerca per nom, codi o escola…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <div style={{ maxHeight: 320, overflowY: "auto", marginTop: "0.75rem" }}>
+                {filteredParticipants.map((p) => (
+                  <label
+                    key={p.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      padding: "0.4rem 0",
+                      borderBottom: "1px solid var(--border)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(p.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedIds((ids) => [...ids, p.id]);
+                        else setSelectedIds((ids) => ids.filter((id) => id !== p.id));
+                      }}
+                    />
+                    <span>{p.first_name}</span>
+                    <SchoolBadge abbreviation={p.school_abbreviation} name={p.school_name} />
+                    <span className="muted" style={{ fontSize: "0.78rem" }}>{p.code}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                {assigned.length} alumnes assignats actualment
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setAssignUserId(null)}>
+                Cancel·lar
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={saveAssignments.isPending}
+                onClick={() => saveAssignments.mutate()}
+              >
+                Desar assignacions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import {
   Atom,
   BarChart3,
   BookOpen,
+  Building2,
   Command,
   FileText,
   FolderKanban,
@@ -28,7 +29,7 @@ import { avatarStyle, avatarInitial } from "../../utils/hueAvatar";
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   admin:        { label: "Admin",        color: "#7c3aed", bg: "#ede9fe" },
   coordinator:  { label: "Coordinadora", color: "#2563eb", bg: "#dbeafe" },
-  professional: { label: "Professional", color: "#059669", bg: "#d1fae5" },
+  professional: { label: "Voluntari/a", color: "#059669", bg: "#d1fae5" },
   donor:        { label: "Donant",       color: "#d97706", bg: "#fef3c7" },
   viewer:       { label: "Visitant",     color: "#64748b", bg: "#f1f5f9" },
 };
@@ -37,12 +38,13 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
   professional: [
     { to: "/professional/session-logger", label: "Registre",         icon: Zap },
     { to: "/coordinator/sessions",        label: "Historial",        icon: History },
-    { to: "/coordinator/participants",    label: "Participants",      icon: Users },
-    { to: "/coordinator/micro-goals",    label: "Micro-objectius",   icon: Target },
+    { to: "/coordinator/participants",    label: "Alumnes",          icon: Users },
+    { to: "/voluntari/progress",          label: "Progrés",          icon: BarChart3 },
   ],
   coordinator: [
     { to: "/coordinator/dashboard",          label: "Dashboard",          icon: LayoutDashboard },
-    { to: "/coordinator/participants",       label: "Participants",        icon: Users },
+    { to: "/coordinator/participants",       label: "Alumnes",             icon: Users },
+    { to: "/coordinator/schools",            label: "Escoles",             icon: Building2 },
     { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
     { to: "/coordinator/sessions",          label: "Historial",           icon: History },
     { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
@@ -50,10 +52,13 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
     { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
     { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
     { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
+    { to: "/coordinator/gestio",             label: "Gestió",              icon: Settings },
+    { to: "/coordinator/landing",            label: "Web",                 icon: BookOpen },
   ],
   admin: [
     { to: "/coordinator/dashboard",          label: "Dashboard",          icon: LayoutDashboard },
-    { to: "/coordinator/participants",       label: "Participants",        icon: Users },
+    { to: "/coordinator/participants",       label: "Alumnes",             icon: Users },
+    { to: "/coordinator/schools",            label: "Escoles",             icon: Building2 },
     { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
     { to: "/coordinator/sessions",          label: "Historial",           icon: History },
     { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
@@ -61,6 +66,8 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
     { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
     { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
     { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
+    { to: "/coordinator/gestio",             label: "Gestió",              icon: Settings },
+    { to: "/coordinator/landing",            label: "Web",                 icon: BookOpen },
     { to: "/admin/control-center",           label: "Admin",               icon: BookOpen },
   ],
   donor: [

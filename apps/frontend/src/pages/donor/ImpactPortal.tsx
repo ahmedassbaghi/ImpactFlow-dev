@@ -7,7 +7,7 @@ import {
   BarChart3, FlaskConical, Ruler, RefreshCw,
   ChevronDown, ChevronUp,
 } from "lucide-react";
-import { getDonorDashboard, getInterventionEffect, getSROI } from "../../api/dashboard";
+import { getDonorDashboard, getDonorSROI, getInterventionEffect } from "../../api/dashboard";
 import SROIStatement from "../../components/sroi/SROIStatement";
 import SROIBreakdown from "../../components/sroi/SROIBreakdown";
 
@@ -69,7 +69,7 @@ function InfoBox({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="info-box">
-      <button className="info-box-toggle" onClick={() => setOpen(!open)}>
+      <button type="button" className="info-box-toggle" onClick={() => setOpen(!open)}>
         {open ? <ChevronUp size={14} strokeWidth={2.5} /> : <ChevronDown size={14} strokeWidth={2.5} />}
         Com s'han calculat els euros?
       </button>
@@ -96,11 +96,16 @@ export default function ImpactPortalPage() {
     enabled: !!programId,
   });
 
-  const { data: sroi } = useQuery({
-    queryKey: ["sroi", programId, costEur, months],
-    queryFn: () => getSROI(programId!, costEur, months),
+  const { data: sroi, isLoading: sroiLoading, isError: sroiError } = useQuery({
+    queryKey: ["donor-sroi", ORG_SLUG, programId, costEur, months],
+    queryFn: () => getDonorSROI(ORG_SLUG, costEur, months, programId),
     enabled: !!programId,
   });
+
+  useEffect(() => {
+    const v = Number(costInput);
+    if (v > 0) setCostEur(v);
+  }, [costInput]);
 
   const nParticipants = donor?.n_participants ?? 0;
   const avgIpiGainPct = donor?.avg_ipi_gain_pct ?? 0;
@@ -117,14 +122,17 @@ export default function ImpactPortalPage() {
   const ci = effect?.confidence_interval_95 ?? null;
   const narrative = effect?.narrative ?? donor?.narrative ?? null;
 
+  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8013/api/v1";
+
   const handleDownloadEvidence = () => {
     if (!programId) return;
-    const url = `http://localhost:8013/api/v1/analytics/evidence-export?program_id=${programId}&cost_eur=${costEur}`;
+    const url = `${apiBase}/analytics/evidence-export?program_id=${programId}&cost_eur=${costEur}`;
     window.open(url, "_blank");
   };
 
   return (
-    <div className="donor-portal">
+    <div className="donor-ui">
+    <div className="donor-portal donor-page">
 
       {/* ── 1. HERO ─────────────────────────────────────────────── */}
       <section className="donor-hero">
@@ -154,16 +162,127 @@ export default function ImpactPortalPage() {
               <div className="donor-counter-label">Valor social per cada €1 invertit</div>
             </div>
           </div>
-          <button className="donor-cta-btn" onClick={handleDownloadEvidence}>
+          <button type="button" className="donor-cta-btn" onClick={handleDownloadEvidence}>
             Descarrega l'informe complet
           </button>
         </div>
       </section>
 
-      {/* ── 2. QUÈ MESURES? — L'IPI ─────────────────────────────── */}
+      {/* ── 2. FUNCIÓ DE NARINAN ───────────────────────────────── */}
       <section className="donor-section">
-        <h2 className="donor-section-title">Què mesurem?</h2>
+        <h2 className="donor-section-title">Què fa Narinan?</h2>
         <p className="donor-section-sub">
+          Narinan acompanya infants i joves en situació de vulnerabilitat mitjançant programes
+          socioeducatius a les escoles: reforç escolar, teatre social, suport emocional i integració.
+          Els voluntaris registren cada sessió; la coordinació mesura el progrés real amb l'IPI.
+        </p>
+        <div className="donor-photo-grid">
+          <img src="/images/narinan/activity-1.svg" alt="Sessió de reforç escolar en petit grup" width={280} height={180} />
+          <img src="/images/narinan/activity-2.svg" alt="Activitat de teatre social" width={280} height={180} />
+          <img src="/images/narinan/activity-3.svg" alt="Acompanyament educatiu personalitzat" width={280} height={180} />
+        </div>
+      </section>
+
+      {/* ── 3. ABANS I ARA (mogut abans de metodologia) ─────────── */}
+      <section className="donor-section donor-section-alt">
+        <h2 className="donor-section-title">Abans i ara</h2>
+        <p className="donor-section-sub">
+          Evolució de cada dimensió des del moment d'entrada al programa fins avui.
+        </p>
+        <div className="before-after-grid">
+          {Object.entries(dimEvolution).map(([dim, data]: [string, any]) => {
+            const baseline = data?.baseline ?? 0;
+            const current = data?.current ?? 0;
+            const gain = data?.gain ?? 0;
+            return (
+              <div key={dim} className="before-after-item">
+                <div className="before-after-header">
+                  <div>
+                    <span className="before-after-dim" style={{ color: DIM_COLORS[dim] }}>
+                      {DIM_LABELS[dim] ?? dim}
+                    </span>
+                    <div className="before-after-dim-desc">{DIM_DESCS[dim]}</div>
+                  </div>
+                  <span className="before-after-gain" style={{ color: gain > 0 ? "var(--risk-low)" : gain < 0 ? "var(--risk-high)" : "var(--text-muted)" }}>
+                    {gain > 0 ? "+" : ""}{gain.toFixed(1)} pts
+                  </span>
+                </div>
+                <div className="before-after-bars">
+                  <div className="before-after-bar-row">
+                    <span className="before-after-bar-label">Entrada</span>
+                    <div className="before-after-bar-track">
+                      <motion.div className="before-after-bar" style={{ background: "var(--surface-3)" }} initial={{ width: 0 }} animate={{ width: `${Math.min(baseline, 100)}%` }} transition={{ duration: 1.2, ease: "easeOut" }} />
+                    </div>
+                    <span className="before-after-bar-pct">{baseline.toFixed(0)}%</span>
+                  </div>
+                  <div className="before-after-bar-row">
+                    <span className="before-after-bar-label">Ara</span>
+                    <div className="before-after-bar-track">
+                      <motion.div className="before-after-bar" style={{ background: DIM_COLORS[dim] }} initial={{ width: 0 }} animate={{ width: `${Math.min(current, 100)}%` }} transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }} />
+                    </div>
+                    <span className="before-after-bar-pct">{current.toFixed(0)}%</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── 4. SROI ───────────────────────────────────────────── */}
+      <section className="donor-section">
+        <h2 className="donor-section-title">Retorn social de la inversió (SROI)</h2>
+        {sroiLoading && <p className="muted">Calculant SROI…</p>}
+        {sroiError && <p className="form-error" role="alert">No s'ha pogut calcular l'SROI. Comprova la connexió.</p>}
+        {sroi && (
+          <>
+          <p className="donor-section-sub">
+            Ajusta la inversió i la durada per simular l'impacte del teu programa.
+          </p>
+          <div className="sroi-config-row">
+            <label className="sroi-config-field" htmlFor="donor-sroi-cost">
+              <span className="sroi-config-label">Inversió total del programa (€)</span>
+              <input
+                id="donor-sroi-cost"
+                className="form-input sroi-config-input"
+                type="number"
+                min={1000}
+                step={500}
+                value={costInput}
+                onChange={(e) => setCostInput(e.target.value)}
+              />
+            </label>
+            <label className="sroi-config-field" htmlFor="donor-sroi-months">
+              <span className="sroi-config-label">Durada del programa (mesos)</span>
+              <input
+                id="donor-sroi-months"
+                className="form-input sroi-config-input"
+                type="number"
+                min={1}
+                max={36}
+                step={1}
+                value={months}
+                onChange={(e) => setMonths(Math.max(1, Number(e.target.value)))}
+              />
+            </label>
+          </div>
+          <div className="sroi-layout">
+            <SROIStatement sroiRatio={sroi.sroi_ratio} conservative={sroi.sensitivity_analysis?.conservative} optimistic={sroi.sensitivity_analysis?.optimistic} statement={sroi.sroi_statement} />
+            <SROIBreakdown breakdown={sroi.value_breakdown ?? {}} />
+          </div>
+          </>
+        )}
+      </section>
+
+      {/* ── 5. QUÈ I COM MESUREM (desplegables) ─────────────────── */}
+      <section className="donor-section donor-section-alt">
+        <h2 className="donor-section-title">Què i com mesurem?</h2>
+        <p className="donor-section-sub">Metodologia detallada (opcional)</p>
+
+      <details className="donor-accordion">
+        <summary>Què mesurem? — L'IPI</summary>
+        <div className="donor-accordion-body">
+        <p className="donor-section-sub" style={{ marginTop: "0.75rem" }}>
           L'<strong>Índex de Progrés Integral (IPI)</strong> és la brúixola del programa.
           Mesura el progrés de cada infant en quatre dimensions clau, de 0 a 100.
           Al principi, cada educador/a fa una avaluació inicial (el "punt de partida")
@@ -188,11 +307,12 @@ export default function ImpactPortalPage() {
             );
           })}
         </div>
-      </section>
+        </div>
+      </details>
 
-      {/* ── 3. EVIDÈNCIA CIENTÍFICA ─────────────────────────────── */}
-      <section className="donor-section donor-section-alt">
-        <h2 className="donor-section-title">La millora és real?</h2>
+      <details className="donor-accordion">
+        <summary>La millora és real?</summary>
+        <div className="donor-accordion-body">
         <p className="donor-section-sub">
           No ens conformem amb percentatges: apliquem estadística rigorosa per saber si el canvi
           és real o podria ser fruit de l'atzar. Cada indicador respon una pregunta concreta.
@@ -286,201 +406,14 @@ export default function ImpactPortalPage() {
             {narrative}
           </div>
         )}
-      </section>
-
-      {/* ── 4. ABANS I ARA ──────────────────────────────────────── */}
-      <section className="donor-section">
-        <h2 className="donor-section-title">Abans i ara</h2>
-        <p className="donor-section-sub">
-          Evolució de cada dimensió des del moment d'entrada al programa fins avui.
-          Les barres mostren el percentatge assolit sobre el màxim possible (100 pts).
-        </p>
-        <div className="before-after-grid">
-          {Object.entries(dimEvolution).map(([dim, data]: [string, any]) => {
-            const baseline = data?.baseline ?? 0;
-            const current = data?.current ?? 0;
-            const gain = data?.gain ?? 0;
-            return (
-              <div key={dim} className="before-after-item">
-                <div className="before-after-header">
-                  <div>
-                    <span className="before-after-dim" style={{ color: DIM_COLORS[dim] }}>
-                      {DIM_LABELS[dim] ?? dim}
-                    </span>
-                    <div className="before-after-dim-desc">{DIM_DESCS[dim]}</div>
-                  </div>
-                  <span className="before-after-gain" style={{ color: gain > 0 ? "var(--risk-low)" : gain < 0 ? "var(--risk-high)" : "var(--text-muted)" }}>
-                    {gain > 0 ? "+" : ""}{gain.toFixed(1)} pts
-                  </span>
-                </div>
-                <div className="before-after-bars">
-                  <div className="before-after-bar-row">
-                    <span className="before-after-bar-label">Entrada</span>
-                    <div className="before-after-bar-track">
-                      <motion.div
-                        className="before-after-bar"
-                        style={{ background: "var(--surface-3)" }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(baseline, 100)}%` }}
-                        transition={{ duration: 1.2, ease: "easeOut" }}
-                      />
-                    </div>
-                    <span className="before-after-bar-pct">{baseline.toFixed(0)}%</span>
-                  </div>
-                  <div className="before-after-bar-row">
-                    <span className="before-after-bar-label">Ara</span>
-                    <div className="before-after-bar-track">
-                      <motion.div
-                        className="before-after-bar"
-                        style={{ background: DIM_COLORS[dim] }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(current, 100)}%` }}
-                        transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }}
-                      />
-                    </div>
-                    <span className="before-after-bar-pct">{current.toFixed(0)}%</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
         </div>
-      </section>
+      </details>
 
-      {/* ── 5. RETORN SOCIAL ────────────────────────────────────── */}
-      {sroi && (
-        <section className="donor-section donor-section-alt">
-          <h2 className="donor-section-title">Retorn social de la inversió</h2>
-          <p className="donor-section-sub">
-            L'<strong>SROI (Social Return on Investment)</strong> tradueix l'impacte social a valor econòmic.
-            La idea és simple: el programa estalvia costos que la societat hauria de pagar d'altra manera
-            (classes particulars, serveis socials, etc.) i genera valor futur (empleabilitat).
-            Sumant tot això i dividint-ho per la inversió, obtenim l'SROI.
-          </p>
-
-          {/* Cost config */}
-          <div className="sroi-config-row">
-            <div className="sroi-config-field">
-              <span className="sroi-config-label">Inversió total del programa (€)</span>
-              <input
-                className="form-input sroi-config-input"
-                type="number"
-                min={1000}
-                step={500}
-                value={costInput}
-                onChange={(e) => setCostInput(e.target.value)}
-                onBlur={() => {
-                  const v = Number(costInput);
-                  if (v > 0) setCostEur(v);
-                  else setCostInput(String(costEur));
-                }}
-              />
-            </div>
-            <div className="sroi-config-field">
-              <span className="sroi-config-label">Durada del programa (mesos)</span>
-              <input
-                className="form-input sroi-config-input"
-                type="number"
-                min={1}
-                max={36}
-                step={1}
-                value={months}
-                onChange={(e) => setMonths(Math.max(1, Number(e.target.value)))}
-              />
-            </div>
-            <div className="sroi-config-note">
-              Ajusta la inversió i la durada per calcular l'SROI del teu programa específic.
-            </div>
-          </div>
-
-          <div className="sroi-layout">
-            <SROIStatement
-              sroiRatio={sroi.sroi_ratio}
-              conservative={sroi.sensitivity_analysis?.conservative}
-              optimistic={sroi.sensitivity_analysis?.optimistic}
-              statement={sroi.sroi_statement}
-            />
-            <SROIBreakdown breakdown={sroi.value_breakdown ?? {}} />
-          </div>
-
-          <InfoBox>
-            <p style={{ marginBottom: "0.75rem" }}>
-              El valor de cada component s'estima a partir de proxies econòmics validats
-              (costos de mercat o dades oficials). Aquí t'expliquem d'on surt cada número:
-            </p>
-            <div className="sroi-explain-grid">
-              <div className="sroi-explain-item">
-                <div className="sroi-explain-title" style={{ color: "var(--dim-academic)" }}>
-                  <BookOpen size={14} strokeWidth={2} />
-                  Millora acadèmica
-                </div>
-                <p>
-                  Per cada infant que millora acadèmicament, estimem que el programa substitueix
-                  classes de reforç privat (1h/setmana de mitjana).
-                  Preu de mercat del reforç grupal a Catalunya: <strong>€65/mes</strong> (2024).
-                  Fórmula: <em>infants × (guany IPI / 25) × €65 × mesos</em>.
-                  La divisió per 25 escala la millora: 25 punts IPI = 1 mes complet de reforç substituït.
-                </p>
-              </div>
-              <div className="sroi-explain-item">
-                <div className="sroi-explain-title" style={{ color: "var(--risk-high)" }}>
-                  <Users2 size={14} strokeWidth={2} />
-                  Reducció del risc d'exclusió social
-                </div>
-                <p>
-                  Quan un infant classificat en risc alt millora, s'evita part del cost
-                  que generaria als serveis socials (seguiment especialitzat, intervencions familiars).
-                  Cost anual per cas en risc: <strong>€2.800/any</strong>
-                  (Dept. Drets Socials Generalitat de Catalunya, 2023).
-                  Fórmula: <em>infants en risc alt que milloren × €2.800 × (mesos/12)</em>.
-                </p>
-              </div>
-              <div className="sroi-explain-item">
-                <div className="sroi-explain-title" style={{ color: "var(--dim-integration)" }}>
-                  <Globe size={14} strokeWidth={2} />
-                  Valor d'integració
-                </div>
-                <p>
-                  La millora en fluïdesa lingüística i adaptació cultural té un impacte
-                  directe en l'empleabilitat futura de l'infant.
-                  Valor actualitzat per infant: <strong>€1.200</strong>
-                  (Fundació Jaume Bofill, 2023, actualitzat per inflació).
-                  Fórmula: <em>infants × % guany integració × €1.200</em>.
-                </p>
-              </div>
-              <div className="sroi-explain-item">
-                <div className="sroi-explain-title" style={{ color: "var(--dim-social)" }}>
-                  <Brain size={14} strokeWidth={2} />
-                  Suport educatiu directe
-                </div>
-                <p>
-                  Cada hora de sessió és suport professional que cada família no ha de pagar.
-                  Taxa professional de suport socioeducatiu grupal: <strong>€18/hora per infant</strong>
-                  (tarifa orientativa professionals d'educació social, Catalunya 2024).
-                  Fórmula: <em>infants × sessions × hores/sessió × €18</em>.
-                  <br /><strong>Aquest és el component més important</strong> perquè no depèn de l'IPI
-                  i reflecteix el valor directe de cada hora de presència al programa.
-                </p>
-              </div>
-            </div>
-            <div className="sroi-explain-corrections">
-              <strong>Factors de correcció aplicats (conservadors):</strong>
-              <ul>
-                <li><em>Deadweight</em> 25%: descomptem el 25% de la millora que podria haver passat sense el programa.</li>
-                <li><em>Atribució</em> 85%: reconeixem que el 15% de la millora pot ser deguda a altres factors externs.</li>
-                <li><em>Decaïment</em> 15%: el valor social disminueix un 15% cada any si no hi ha continuïtat.</li>
-              </ul>
-            </div>
-          </InfoBox>
-        </section>
-      )}
-
-      {/* ── 6. TRANSPARÈNCIA I METODOLOGIA ──────────────────────── */}
-      <section className="donor-section">
-        <h2 className="donor-section-title">Qui és qui al programa?</h2>
-        <p className="donor-section-sub">
-          Distribució de participants per nivell de risc d'abandonament o estancament.
-          El risc es calcula automàticament setmanalment en base a assistència, progrés IPI i objectius.
+      <details className="donor-accordion">
+        <summary>Qui és qui al programa?</summary>
+        <div className="donor-accordion-body">
+        <p className="donor-section-sub" style={{ marginTop: "0.75rem" }}>
+          Distribució d'alumnes per nivell de risc. El risc es calcula setmanalment segons assistència, IPI i objectius.
         </p>
         <div className="methodology-layout">
           {riskPieData.length > 0 && (
@@ -544,11 +477,14 @@ export default function ImpactPortalPage() {
         </div>
 
         <div style={{ textAlign: "center", marginTop: "2rem" }}>
-          <button className="donor-evidence-btn" onClick={handleDownloadEvidence}>
+          <button type="button" className="donor-evidence-btn" onClick={handleDownloadEvidence}>
             Descarrega el paquet d'evidència complet (JSON)
           </button>
         </div>
+        </div>
+      </details>
       </section>
+    </div>
     </div>
   );
 }

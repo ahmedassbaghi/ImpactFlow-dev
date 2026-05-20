@@ -21,6 +21,12 @@ export type CreateSessionPayload = {
   micro_goal_completions?: Array<{ goal_id: string; note?: string }>;
 };
 
+export type SessionParticipantBrief = {
+  id: string;
+  first_name: string;
+  code: string;
+};
+
 export type SessionListItem = {
   id: string;
   program_id: string;
@@ -30,6 +36,7 @@ export type SessionListItem = {
   notes: string | null;
   notes_ai_summary: string | null;
   notes_sentiment: number | null;
+  participants?: SessionParticipantBrief[];
 };
 
 export async function createSession(payload: CreateSessionPayload) {
@@ -51,6 +58,7 @@ export type SessionObservation = {
 export async function listSessions(filters?: {
   program_id?: string;
   participant_id?: string;
+  school_id?: string;
   date_from?: string;
   date_to?: string;
 }): Promise<SessionListItem[]> {

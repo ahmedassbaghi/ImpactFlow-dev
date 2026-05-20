@@ -32,9 +32,10 @@ const DIM_COLORS: Record<DimKey, string> = {
   integrationScore: "var(--dim-integration)",
 };
 
-const SIZE = 280;
+const SIZE = 260;
 const CENTER = SIZE / 2;
-const MAX_R = 110;
+const MAX_R = 96;
+const AXIS_LABEL_POSITIONS = ["top", "right", "bottom", "left"] as const;
 const LEVELS: (1 | 2 | 3 | 4 | 5)[] = [1, 2, 3, 4, 5];
 
 /** Angle in radians for axis index 0..3 (top, right, bottom, left). */
@@ -70,12 +71,24 @@ export function OutcomesStar({
 
   return (
     <div className="ostar-wrap">
-      <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="ostar-svg"
-        role="img"
-        aria-label="Estrella d'evolució (Outcomes Star)"
-      >
+      <div className="ostar-chart" role="group" aria-label="Estrella d'evolució (Outcomes Star)">
+        <ul className="ostar-axis-labels" aria-hidden="true">
+          {DIM_ORDER.map((dim, i) => (
+            <li
+              key={dim}
+              className={`ostar-axis-label ostar-axis-label--${AXIS_LABEL_POSITIONS[i]}`}
+              style={{ color: DIM_COLORS[dim] }}
+            >
+              {DIM_LABELS[dim]}
+            </li>
+          ))}
+        </ul>
+        <svg
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          className="ostar-svg"
+          role="img"
+          aria-hidden="true"
+        >
         {/* concentric rings */}
         {LEVELS.map((lvl) => (
           <circle
@@ -152,33 +165,6 @@ export function OutcomesStar({
           })
         )}
 
-        {/* axis labels */}
-        {DIM_ORDER.map((dim, i) => {
-          const a = axisAngle(i);
-          const r = MAX_R + 22;
-          const x = CENTER + Math.cos(a) * r;
-          const y = CENTER + Math.sin(a) * r;
-          // anchor positioning per quadrant
-          const ta =
-            i === 0 ? "middle" :
-            i === 1 ? "start"  :
-            i === 2 ? "middle" : "end";
-          return (
-            <text
-              key={`label-${dim}`}
-              x={x}
-              y={y + 4}
-              textAnchor={ta}
-              fontSize={11}
-              fontWeight={700}
-              fill="var(--text-secondary)"
-              style={{ letterSpacing: 0.3 }}
-            >
-              {DIM_LABELS[dim]}
-            </text>
-          );
-        })}
-
         {/* level numbers along the top axis (legend) */}
         {LEVELS.map((lvl) => {
           const r = (lvl / 5) * MAX_R;
@@ -195,6 +181,7 @@ export function OutcomesStar({
           );
         })}
       </svg>
+      </div>
 
       {/* anchored descriptions panel */}
       <div className="ostar-panel">
@@ -226,20 +213,22 @@ export function OutcomesStar({
               const v = scores[dim] || 0;
               return (
                 <div key={dim} className="ostar-selected-item">
-                  <span className="ostar-selected-dim" style={{ color: DIM_COLORS[dim] }}>
-                    {DIM_LABELS[dim]}
-                  </span>
-                  {v >= 1 ? (
-                    <>
+                  <div className="ostar-selected-item-header">
+                    <span className="ostar-selected-dim" style={{ color: DIM_COLORS[dim] }}>
+                      {DIM_LABELS[dim]}
+                    </span>
+                    {v >= 1 ? (
                       <span className="ostar-selected-level">
                         {v}/5 · {STAR_LEVEL_TAGS[v as 1 | 2 | 3 | 4 | 5]}
                       </span>
-                      <span className="ostar-selected-anchor">
-                        {STAR_ANCHORS[dim][v as 1 | 2 | 3 | 4 | 5]}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="ostar-selected-empty">Sense valorar</span>
+                    ) : (
+                      <span className="ostar-selected-empty">Sense valorar</span>
+                    )}
+                  </div>
+                  {v >= 1 && (
+                    <span className="ostar-selected-anchor">
+                      {STAR_ANCHORS[dim][v as 1 | 2 | 3 | 4 | 5]}
+                    </span>
                   )}
                 </div>
               );

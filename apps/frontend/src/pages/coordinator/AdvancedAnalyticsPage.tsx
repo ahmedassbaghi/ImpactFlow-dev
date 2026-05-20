@@ -34,6 +34,7 @@ import {
   ZAxis,
 } from "recharts";
 import { listPrograms } from "../../api/programs";
+import { listSchools } from "../../api/schools";
 import {
   getDimensionEffects,
   getDoseResponse,
@@ -581,6 +582,8 @@ export default function AdvancedAnalyticsPage() {
     queryFn: () => listPrograms(false),
   });
   const [programId, setProgramId] = useState<string>("");
+  const [schoolId, setSchoolId] = useState<string>("");
+  const { data: schools = [] } = useQuery({ queryKey: ["schools"], queryFn: listSchools });
 
   if (!programId && programs.length > 0) {
     setProgramId(programs[0].id);
@@ -598,17 +601,31 @@ export default function AdvancedAnalyticsPage() {
             Mides d'efecte, dosi-resposta, simulació Monte Carlo i detecció d'anomalies — el motor científic d'ImpactFlow.
           </p>
         </div>
-        <select
-          className="form-select"
-          style={{ minWidth: 220 }}
-          value={programId}
-          onChange={(e) => setProgramId(e.target.value)}
-        >
-          <option value="">Selecciona programa…</option>
-          {programs.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <select
+            className="form-select"
+            style={{ minWidth: 180 }}
+            value={schoolId}
+            onChange={(e) => setSchoolId(e.target.value)}
+            aria-label="Filtrar per escola"
+          >
+            <option value="">Totes les escoles</option>
+            {schools.map((s) => (
+              <option key={s.id} value={s.id}>{s.abbreviation}</option>
+            ))}
+          </select>
+          <select
+            className="form-select"
+            style={{ minWidth: 220 }}
+            value={programId}
+            onChange={(e) => setProgramId(e.target.value)}
+          >
+            <option value="">Selecciona programa…</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {!programId ? (

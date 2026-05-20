@@ -1,5 +1,5 @@
 :root {
-  font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  font-family: 'Nunito', system-ui, sans-serif;
   color: #111827;
   background: #f3f4f6;
 
@@ -80,7 +80,7 @@ input[type="checkbox"], input[type="radio"] {
 body {
   margin: 0;
   background: #f3f4f6;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 .container {
@@ -288,10 +288,13 @@ label {
   border-color: rgba(239, 68, 68, 0.3);
 }
 
-/* Content area */
+/* Content area — min-height: 0 lets flex child scroll */
 .shell-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: var(--surface-1);
 }
 

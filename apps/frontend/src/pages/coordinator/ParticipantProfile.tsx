@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { useAuthStore } from "../../stores/authStore";
 import {
   Line,
   LineChart,
@@ -26,14 +27,20 @@ import {
   Star,
 } from "lucide-react";
 import {
+  getParticipant,
   getParticipantEvolution,
   getParticipantRisk,
   getParticipantPredictionProbabilistic,
   getDropoutProbability,
   getParticipantCluster,
+  getParticipantPrograms,
+  enrollParticipant,
+  unenrollParticipant,
   createBaseline,
 } from "../../api/participants";
 import { listPrograms } from "../../api/programs";
+import { toast } from "../../stores/toastStore";
+import { VolunteerPageHeader, VOL_HOME } from "../../components/voluntari/VolunteerPageHeader";
 
 const TABS = ["Baseline", "Evolució", "Predicció", "Anàlisi", "Alertes"] as const;
 type Tab = (typeof TABS)[number];
@@ -370,41 +377,106 @@ function BaselineReadOnly({ evolution }: { evolution: Record<string, unknown> })
 export default function ParticipantProfile() {
   const { participantId } = useParams<{ participantId: string }>();
   const [searchParams] = useSearchParams();
-  const programId = searchParams.get("program_id") ?? "";
+  const programIdFromUrl = searchParams.get("program_id") ?? "";
+  const isVolunteer = useAuthStore((s) => s.role) === "professional";
+  const qc = useQueryClient();
+  const [enrollProgramId, setEnrollProgramId] = useState("");
 
-  const evolutionQ = useQuery({
-    queryKey: ["participant-evolution", participantId],
-    queryFn: () => getParticipantEvolution(participantId!),
+  const participantQ = useQuery({
+    queryKey: ["participant", participantId],
+    queryFn: () => getParticipant(participantId!),
+    enabled: !!participantId,
+    retry: false,
+  });
+
+  const enrolledProgramsQ = useQuery({
+    queryKey: ["participant-programs", participantId],
+    queryFn: () => getParticipantPrograms(participantId!),
     enabled: !!participantId,
   });
 
-  const evolution = evolutionQ.data;
-  const hasBaseline = evolutionQ.data !== null && evolution?.baseline_ipi != null;
+  const effectiveProgramId =
+    programIdFromUrl || enrolledProgramsQ.data?.[0]?.id || "";
 
-  const [activeTab, setActiveTab] = useState<Tab>(hasBaseline ? "Evolució" : "Baseline");
+  const evolutionQ = useQuery({
+    queryKey: ["participant-evolution", participantId, effectiveProgramId],
+    queryFn: () =>
+      getParticipantEvolution(participantId!, effectiveProgramId || undefined),
+    enabled: !!participantId && participantQ.isSuccess,
+  });
+
+  const evolution = evolutionQ.data;
+  const hasBaseline = evolution?.baseline_ipi != null;
+
+  const visibleTabs = useMemo(
+    () => (isVolunteer ? (["Evolució"] as const) : TABS),
+    [isVolunteer]
+  );
+
+  const [activeTab, setActiveTab] = useState<Tab>(isVolunteer ? "Evolució" : "Baseline");
+
+  useEffect(() => {
+    if (isVolunteer) {
+      setActiveTab("Evolució");
+      return;
+    }
+    if (hasBaseline) setActiveTab("Evolució");
+    else if (!evolutionQ.isLoading && evolutionQ.isSuccess) setActiveTab("Baseline");
+  }, [isVolunteer, hasBaseline, evolutionQ.isLoading, evolutionQ.isSuccess]);
 
   const riskQ = useQuery({
-    queryKey: ["participant-risk", participantId, programId],
-    queryFn: () => getParticipantRisk(participantId!, programId),
-    enabled: !!participantId && !!programId,
+    queryKey: ["participant-risk", participantId, effectiveProgramId],
+    queryFn: () => getParticipantRisk(participantId!, effectiveProgramId),
+    enabled: !!participantId && !!effectiveProgramId && !isVolunteer,
   });
 
   const predQ = useQuery({
     queryKey: ["participant-prediction", participantId],
     queryFn: () => getParticipantPredictionProbabilistic(participantId!, { weeks_ahead: 12, target_ipi: 70 }),
-    enabled: !!participantId,
+    enabled: !!participantId && !isVolunteer,
   });
 
   const dropoutQ = useQuery({
-    queryKey: ["participant-dropout", participantId, programId],
-    queryFn: () => getDropoutProbability(participantId!, programId),
-    enabled: !!participantId && !!programId,
+    queryKey: ["participant-dropout", participantId, effectiveProgramId],
+    queryFn: () => getDropoutProbability(participantId!, effectiveProgramId),
+    enabled: !!participantId && !!effectiveProgramId && !isVolunteer,
   });
 
   const clusterQ = useQuery({
-    queryKey: ["participant-cluster", participantId, programId],
-    queryFn: () => getParticipantCluster(participantId!, programId),
-    enabled: !!participantId && !!programId,
+    queryKey: ["participant-cluster", participantId, effectiveProgramId],
+    queryFn: () => getParticipantCluster(participantId!, effectiveProgramId),
+    enabled: !!participantId && !!effectiveProgramId && !isVolunteer,
+  });
+
+  const allProgramsQ = useQuery({
+    queryKey: ["programs"],
+    queryFn: () => listPrograms(true),
+  });
+
+  const enrolledPrograms = enrolledProgramsQ.data ?? [];
+  const enrolledIds = new Set(enrolledPrograms.map((p) => p.id));
+  const programsToEnroll = (allProgramsQ.data ?? []).filter((p) => !enrolledIds.has(p.id));
+
+  const enrollMutation = useMutation({
+    mutationFn: (progId: string) => enrollParticipant(progId, participantId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["participant-programs", participantId] });
+      qc.invalidateQueries({ queryKey: ["participants"] });
+      qc.invalidateQueries({ queryKey: ["participant-evolution", participantId] });
+      setEnrollProgramId("");
+      toast.success("Inscrit al programa");
+    },
+    onError: () => toast.error("No s'ha pogut inscriure"),
+  });
+
+  const unenrollMutation = useMutation({
+    mutationFn: (progId: string) => unenrollParticipant(progId, participantId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["participant-programs", participantId] });
+      qc.invalidateQueries({ queryKey: ["participants"] });
+      toast.success("Baixa del programa");
+    },
+    onError: () => toast.error("No s'ha pogut donar de baixa"),
   });
 
   const risk = riskQ.data;
@@ -417,15 +489,28 @@ export default function ParticipantProfile() {
   const delta = currentIpi != null && baseline != null ? currentIpi - baseline : null;
   const deltaPct = baseline && delta != null ? (delta / baseline) * 100 : null;
 
+  const historyPoints = evolution?.history ?? evolution?.timeline ?? [];
   const chartData: { label: string; ipi: number | null; predicted?: number }[] = [];
-  if (evolution?.history) {
-    for (const point of evolution.history) {
-      chartData.push({ label: point.period_label || point.date, ipi: point.ipi_score });
-    }
+  for (const point of historyPoints) {
+    const label =
+      point.period_label ||
+      (typeof point.date === "string"
+        ? point.date.slice(0, 10)
+        : String(point.date));
+    chartData.push({ label, ipi: point.ipi_score });
   }
-  if (pred?.predicted_ipi != null) {
-    chartData.push({ label: "Predicció", ipi: null, predicted: pred.predicted_ipi });
+  const predictedIpi = pred?.predicted_ipi ?? evolution?.prediction?.predicted_ipi;
+  if (predictedIpi != null) {
+    chartData.push({ label: "Predicció", ipi: null, predicted: predictedIpi });
   }
+
+  const participant = participantQ.data;
+  const displayName =
+    participant?.first_name ?? evolution?.first_name ?? "Alumne";
+  const displayCode = participant?.code ?? evolution?.code;
+  const avatarLetter = (displayName[0] ?? displayCode?.[0] ?? "?").toUpperCase();
+  const schoolAbbreviation =
+    participant?.school_abbreviation ?? evolution?.school_abbreviation;
 
   const dims = ["academic", "cognitive", "social", "integration"];
   const radarData = dims.map((d) => ({
@@ -438,18 +523,76 @@ export default function ParticipantProfile() {
     return <div style={{ padding: "2rem" }}>Participant no trobat.</div>;
   }
 
+  if (participantQ.isLoading) {
+    return (
+      <div className={isVolunteer ? "vol-page" : undefined} style={{ padding: isVolunteer ? undefined : "1.5rem" }}>
+        {isVolunteer && (
+          <VolunteerPageHeader title="Perfil" subtitle="Carregant alumne…" showBack backTo={VOL_HOME} />
+        )}
+        <p className={isVolunteer ? "vol-empty" : undefined} style={isVolunteer ? undefined : { color: "var(--text-muted)" }}>
+          Carregant perfil…
+        </p>
+      </div>
+    );
+  }
+
+  if (participantQ.isError) {
+    return (
+      <div className={isVolunteer ? "vol-page" : undefined} style={{ padding: isVolunteer ? undefined : "1.5rem" }}>
+        {isVolunteer && (
+          <VolunteerPageHeader title="Perfil" showBack backTo="/coordinator/participants" />
+        )}
+        <p
+          className={isVolunteer ? "vol-empty" : undefined}
+          role="alert"
+          style={isVolunteer ? undefined : { color: "var(--risk-high)" }}
+        >
+          No s'ha pogut carregar aquest alumne. Comprova que estigui assignat al teu equip.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: "1.5rem" }}>
+    <div
+      className={isVolunteer ? "vol-page vol-participant-profile" : undefined}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "1.25rem",
+        padding: isVolunteer ? undefined : "1.5rem",
+      }}
+    >
+      {isVolunteer && (
+        <VolunteerPageHeader
+          title={displayName}
+          subtitle={
+            [
+              displayCode ? `Codi ${displayCode}` : null,
+              schoolAbbreviation ?? null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
+          }
+          showBack
+          backTo="/coordinator/participants"
+        />
+      )}
       <div
-        style={{
-          background: "var(--surface-0)",
-          border: "1px solid var(--border)",
-          borderRadius: 16,
-          padding: "1.25rem 1.5rem",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "1rem",
-        }}
+        className={isVolunteer ? "vol-card vol-profile-kpi" : undefined}
+        style={
+          isVolunteer
+            ? undefined
+            : {
+                background: "var(--surface-0)",
+                border: "1px solid var(--border)",
+                borderRadius: 16,
+                padding: "1.25rem 1.5rem",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "1rem",
+              }
+        }
       >
         <div
           style={{
@@ -466,21 +609,40 @@ export default function ParticipantProfile() {
             flexShrink: 0,
           }}
         >
-          {evolution?.code?.[0] ?? "?"}
+          {avatarLetter}
         </div>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!isVolunteer && (
+            <>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
             <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--text-primary)" }}>
-              {evolution?.code ?? participantId.slice(0, 8)}
+              {displayName}
             </span>
             {risk?.risk_level && <RiskBadge level={risk.risk_level} />}
           </div>
           <div style={{ fontSize: "0.83rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
+            {displayCode && <span>Codi {displayCode}</span>}
+            {schoolAbbreviation && (
+              <span>
+                {displayCode ? " · " : ""}
+                {schoolAbbreviation}
+              </span>
+            )}
             {evolution?.weeks_in_program != null && (
-              <span>Setmana {evolution.weeks_in_program} al programa</span>
+              <span>
+                {(displayCode || schoolAbbreviation) ? " · " : ""}
+                Setmana {evolution.weeks_in_program} al programa
+              </span>
             )}
           </div>
+            </>
+          )}
+          {isVolunteer && evolution?.weeks_in_program != null && (
+            <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+              Setmana {evolution.weeks_in_program} al programa
+            </p>
+          )}
 
           <div
             style={{
@@ -529,6 +691,83 @@ export default function ParticipantProfile() {
         </div>
       </div>
 
+      {!isVolunteer && (
+      <div
+        style={{
+          background: "var(--surface-0)",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          padding: "1rem 1.25rem",
+        }}
+      >
+        <h3 style={{ margin: "0 0 0.75rem", fontSize: "0.95rem", fontWeight: 800 }}>
+          Programes
+        </h3>
+        {enrolledPrograms.length === 0 ? (
+          <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--text-secondary)" }}>
+            Encara no està inscrit en cap programa actiu.
+          </p>
+        ) : (
+          <ul style={{ margin: "0 0 0.75rem", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            {enrolledPrograms.map((prog) => (
+              <li
+                key={prog.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "0.5rem",
+                  fontSize: "0.88rem",
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{prog.name}</span>
+                {!isVolunteer && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: "0.25rem 0.6rem", fontSize: "0.75rem" }}
+                    onClick={() => unenrollMutation.mutate(prog.id)}
+                  >
+                    Baixa
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {programsToEnroll.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+            <label htmlFor="enroll-program-select" className="sr-only">
+              Programa per inscriure
+            </label>
+            <select
+              id="enroll-program-select"
+              className={isVolunteer ? "vol-filter-select" : "form-select"}
+              style={{ flex: 1, minWidth: 160 }}
+              value={enrollProgramId}
+              onChange={(e) => setEnrollProgramId(e.target.value)}
+            >
+              <option value="">Afegir a programa…</option>
+              {programsToEnroll.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={isVolunteer ? "vol-cta-primary" : "btn-primary"}
+              disabled={!enrollProgramId || enrollMutation.isPending}
+              onClick={() => enrollProgramId && enrollMutation.mutate(enrollProgramId)}
+            >
+              Inscriure
+            </button>
+          </div>
+        )}
+      </div>
+      )}
+
+      {!isVolunteer && (
       <div
         style={{
           display: "flex",
@@ -537,7 +776,7 @@ export default function ParticipantProfile() {
           paddingBottom: 0,
         }}
       >
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -558,8 +797,15 @@ export default function ParticipantProfile() {
           </button>
         ))}
       </div>
+      )}
 
-      {activeTab === "Baseline" && (
+      {evolutionQ.isError && (
+        <p className={isVolunteer ? "vol-empty" : undefined} role="alert" style={isVolunteer ? undefined : { color: "var(--risk-medium)" }}>
+          Les dades d'evolució no s'han pogut carregar. El nom i el codi de l'alumne sí que es mostren correctament.
+        </p>
+      )}
+
+      {activeTab === "Baseline" && !isVolunteer && (
         <div>
           {!hasBaseline ? (
             <BaselineForm participantId={participantId} />
@@ -569,7 +815,7 @@ export default function ParticipantProfile() {
         </div>
       )}
 
-      {activeTab === "Evolució" && (
+      {(activeTab === "Evolució" || isVolunteer) && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <div
             style={{

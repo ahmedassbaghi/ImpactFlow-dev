@@ -9,6 +9,9 @@ import "./styles/advanced-analytics.css";
 import "./styles/session-logger.css";
 import "./styles/modern-polish.css";
 import "./styles/common-ui.css";
+import "./styles/mobile-shell.css";
+import "./styles/voluntari-ui.css";
+import "./styles/donor-ui.css";
 import "./stores/themeStore"; // boot theme from localStorage before render
 
 const queryClient = new QueryClient();

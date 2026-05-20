@@ -113,6 +113,18 @@ export async function getDimensionVelocity(programId: string) {
   return data;
 }
 
+export async function getDonorSROI(
+  orgSlug: string,
+  costEur: number,
+  months: number,
+  programId?: string
+) {
+  const { data } = await apiClient.get(`/dashboard/donor/${orgSlug}/sroi`, {
+    params: { cost_eur: costEur, months, program_id: programId },
+  });
+  return data;
+}
+
 export async function getSROI(programId: string, costEur: number, months: number) {
   const { data } = await apiClient.get("/analytics/sroi", {
     params: { program_id: programId, cost_eur: costEur, months },

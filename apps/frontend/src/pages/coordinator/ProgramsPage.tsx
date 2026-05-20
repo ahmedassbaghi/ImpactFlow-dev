@@ -4,11 +4,13 @@ import { Calendar, CheckCircle2, Clock, FolderKanban, Pencil, Plus, Search, Tras
 import { listPrograms, createProgram, updateProgram, deleteProgram, type Program } from "../../api/programs";
 import {
   listParticipants,
+  getParticipantPrograms,
   getEnrolledParticipants,
   enrollParticipant,
   unenrollParticipant,
   type Participant,
 } from "../../api/participants";
+import { SchoolBadge } from "../../components/common/SchoolBadge";
 
 const PROGRAM_TYPE_LABELS: Record<string, string> = {
   academic_social: "Acadèmic i Social",
@@ -273,6 +275,78 @@ function EnrollmentModal({ program, onClose }: { program: Program; onClose: () =
   );
 }
 
+function AssignProgramsByParticipant({ programs }: { programs: Program[] }) {
+  const qc = useQueryClient();
+  const [participantId, setParticipantId] = useState("");
+
+  const { data: participants = [] } = useQuery({
+    queryKey: ["participants", "assign-programs"],
+    queryFn: () => listParticipants(),
+  });
+
+  const { data: enrolledPrograms = [] } = useQuery({
+    queryKey: ["participant-programs", participantId],
+    queryFn: () => getParticipantPrograms(participantId),
+    enabled: !!participantId,
+  });
+
+  const enrolledIds = new Set(enrolledPrograms.map((p) => p.id));
+
+  const toggle = async (programId: string, isEnrolled: boolean) => {
+    if (!participantId) return;
+    if (isEnrolled) await unenrollParticipant(programId, participantId);
+    else await enrollParticipant(programId, participantId);
+    qc.invalidateQueries({ queryKey: ["participant-programs", participantId] });
+  };
+
+  const selected = participants.find((p) => p.id === participantId);
+
+  return (
+    <div className="card" style={{ marginBottom: "1.25rem", padding: "1.25rem" }}>
+      <h2 style={{ fontSize: "1.05rem", margin: "0 0 0.5rem" }}>Assignar programes per alumne</h2>
+      <p className="muted" style={{ fontSize: "0.88rem", marginBottom: "1rem" }}>
+        Selecciona un alumne i marca els programes als quals està inscrit.
+      </p>
+      <label className="form-label" htmlFor="assign-participant">Alumne</label>
+      <select
+        id="assign-participant"
+        className="form-select"
+        value={participantId}
+        onChange={(e) => setParticipantId(e.target.value)}
+      >
+        <option value="">Selecciona alumne…</option>
+        {participants.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.first_name} ({p.code})
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <p style={{ marginTop: "0.5rem" }}>
+          <SchoolBadge abbreviation={selected.school_abbreviation} name={selected.school_name} />
+        </p>
+      )}
+      {participantId && (
+        <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {programs.filter((p) => p.active).map((prog) => {
+            const on = enrolledIds.has(prog.id);
+            return (
+              <label key={prog.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => toggle(prog.id, on)}
+                />
+                {prog.name}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProgramsPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -313,13 +387,15 @@ export default function ProgramsPage() {
         <div className="page-header">
           <div>
             <h1 className="page-title">Programes</h1>
-            <p className="page-subtitle">Gestiona els programes i assigna participants</p>
+            <p className="page-subtitle">Gestiona programes i assignacions per alumne</p>
           </div>
           <button className="btn-primary" onClick={() => setShowCreate(true)}>
             <Plus size={15} strokeWidth={2.5} />
             Nou programa
           </button>
         </div>
+
+        {!isLoading && programs.length > 0 && <AssignProgramsByParticipant programs={programs} />}
 
         {isLoading ? (
           <div className="empty-state">Carregant programes…</div>

@@ -9,6 +9,8 @@ import {
 import { listMicroGoals } from "../../api/microGoals";
 import { getEnrolledParticipants, listParticipants, type Participant } from "../../api/participants";
 import { listPrograms } from "../../api/programs";
+import { listSchools } from "../../api/schools";
+import { SchoolBadge } from "../common/SchoolBadge";
 import { createSession } from "../../api/sessions";
 import { useLocalDraft } from "../../hooks/useLocalDraft";
 import { OutcomesStar } from "./OutcomesStar";
@@ -48,12 +50,14 @@ const ATTENDANCE_OPTIONS = [
 ];
 
 const QUICK_TAGS = [
-  { label: "Atenció sostinguda", icon: "🎯", insert: "Ha mostrat atenció sostinguda durant l'activitat. " },
-  { label: "Iniciativa", icon: "🚀", insert: "Ha pres la iniciativa per resoldre la tasca. " },
-  { label: "Cooperació", icon: "🤝", insert: "Ha cooperat bé amb els companys. " },
-  { label: "Frustració", icon: "😤", insert: "S'ha frustrat davant la dificultat. " },
-  { label: "Millora notable", icon: "📈", insert: "Mostra una millora notable respecte la sessió anterior. " },
-  { label: "Necessita reforç", icon: "🔁", insert: "Necessita reforç en aquest contingut. " },
+  { label: "Atenció sostinguda", icon: "🎯", insert: "Ha mostrat atenció sostinguda durant tota l'activitat, sense distraccions. " },
+  { label: "Iniciativa", icon: "🚀", insert: "Ha pres la iniciativa per començar i acabar la tasca sense recordatoris. " },
+  { label: "Cooperació", icon: "🤝", insert: "Ha cooperat bé amb els companys, compartint materials i idees. " },
+  { label: "Frustració", icon: "😤", insert: "S'ha frustrat davant la dificultat; cal reforç emocional. " },
+  { label: "Millora notable", icon: "📈", insert: "Mostra una millora notable respecte la sessió anterior en aquest contingut. " },
+  { label: "Necessita reforç", icon: "🔁", insert: "Necessita reforç en aquest contingut abans d'avançar. " },
+  { label: "Participació activa", icon: "✋", insert: "Ha participat activament fent preguntes i propostes. " },
+  { label: "Segueix instruccions", icon: "📋", insert: "Segueix les instruccions amb autonomia creixent. " },
 ];
 
 const STAR_LABELS = ["", "Molt baix", "Baix", "Regular", "Bé", "Excel·lent"];
@@ -96,6 +100,8 @@ const INPUT_MODE_OPTIONS: { value: InputMode; label: string; icon: React.Element
   { value: "star",      label: "Estrella radial", icon: Compass, hint: "Outcomes Star · descripcions ancorades" },
   { value: "reactions", label: "Reaccions",      icon: Activity,hint: "ClassDojo · xips en directe"  },
 ];
+
+const VOLUNTEER_INPUT_MODES: InputMode[] = ["stars", "star"];
 
 function StarRating({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
   const [hover, setHover] = useState(0);
@@ -142,20 +148,58 @@ function ParticipantAvatar({ name, size = 36 }: { name: string; size?: number })
   );
 }
 
-export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () => void; compact?: boolean }) {
+export function QuickSessionLogger({
+  onClose,
+  compact = false,
+  volunteerMode = false,
+  initialParticipantIds,
+  lockProgramId,
+}: {
+  onClose?: () => void;
+  compact?: boolean;
+  /** Voluntari/a mòbil: només estrelles i estrella radial; sense pool de participants. */
+  volunteerMode?: boolean;
+  initialParticipantIds?: string[];
+  lockProgramId?: string;
+}) {
   const [_rawForm, setForm, clearForm] = useLocalDraft<FormState>("quick-session-logger-v4", defaultForm());
-  const form: FormState = { ...defaultForm(), ..._rawForm, observations: _rawForm.observations ?? {} };
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const rawInputMode = _rawForm.inputMode ?? "stars";
+  const safeInputMode: InputMode =
+    volunteerMode && !VOLUNTEER_INPUT_MODES.includes(rawInputMode) ? "stars" : rawInputMode;
+
+  const form: FormState = {
+    ...defaultForm(),
+    ..._rawForm,
+    programId: lockProgramId ?? _rawForm.programId ?? "",
+    observations: _rawForm.observations ?? {},
+    inputMode: safeInputMode,
+  };
+
+  const inputModeOptions = volunteerMode
+    ? INPUT_MODE_OPTIONS.filter((o) => VOLUNTEER_INPUT_MODES.includes(o.value))
+    : INPUT_MODE_OPTIONS;
+
+  const hideParticipantPool = volunteerMode && compact;
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>(initialParticipantIds ?? []);
   const [activeIdx, setActiveIdx] = useState(0);
   const [search, setSearch] = useState("");
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [filterSchoolId, setFilterSchoolId] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showDateBanner, setShowDateBanner] = useState(true);
   const qc = useQueryClient();
 
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   const programsQ = useQuery({ queryKey: ["programs"], queryFn: () => listPrograms() });
+  const schoolsQ = useQuery({ queryKey: ["schools"], queryFn: listSchools });
   const participantsQ = useQuery({
-    queryKey: ["participants", "logger", form.programId],
-    queryFn: () => form.programId ? getEnrolledParticipants(form.programId) : listParticipants(),
+    queryKey: ["participants", "logger", form.programId, filterSchoolId],
+    queryFn: () =>
+      form.programId
+        ? getEnrolledParticipants(form.programId)
+        : listParticipants({ schoolId: filterSchoolId || undefined }),
   });
   const goalsQ = useQuery({
     queryKey: ["micro-goals", form.programId],
@@ -164,15 +208,34 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
   });
 
   const programs = programsQ.data ?? [];
-  const participants = participantsQ.data ?? [];
+  const schools = schoolsQ.data ?? [];
+  const participants = (participantsQ.data ?? []).filter(
+    (p) => !filterSchoolId || p.school_id === filterSchoolId
+  );
   const goals = goalsQ.data ?? [];
 
-  // Auto-select program if only one
+  // Auto-select program if only one (unless locked from hub)
   useEffect(() => {
+    if (lockProgramId) return;
     if (!form.programId && programs.length === 1) {
       setForm((prev) => ({ ...prev, programId: programs[0].id }));
     }
-  }, [programs.length]); // eslint-disable-line
+  }, [programs.length, lockProgramId]); // eslint-disable-line
+
+  // Pre-select participants when opening from list
+  useEffect(() => {
+    if (!initialParticipantIds?.length) return;
+    const ids = initialParticipantIds;
+    setSelectedParticipants(ids);
+    setActiveIdx(0);
+    setForm((prev) => {
+      const obs = { ...(prev.observations ?? {}) };
+      ids.forEach((id) => {
+        if (!(id in obs)) obs[id] = defaultObs();
+      });
+      return { ...prev, observations: obs };
+    });
+  }, []); // eslint-disable-line
 
   const activeParticipantId = selectedParticipants[activeIdx] ?? "";
   // Merge with defaultObs so legacy localStorage entries gain new fields
@@ -332,7 +395,6 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
             qualitative_note: composedNote || undefined,
             mood_indicator: obs.mood,
             attendance_status: obs.attendance,
-            micro_goals_completed: obs.microGoalIds,
           };
         })
         .filter((o) => [o.academic_score, o.cognitive_score, o.social_score, o.integration_score].some((v) => v !== undefined));
@@ -356,10 +418,17 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
       setActiveIdx(0);
       qc.invalidateQueries({ queryKey: ["sessions"] });
       qc.invalidateQueries({ queryKey: ["participants"] });
+      qc.invalidateQueries({ queryKey: ["participant-evolution"] });
+      qc.invalidateQueries({ queryKey: ["professional-dashboard"] });
       setTimeout(() => { setSaved(false); onClose?.(); }, 2000);
     },
     onError: (err: Error) => setSaveError(err.message || "Error en guardar la sessió."),
   });
+
+  const requestSave = () => {
+    setSaveError("");
+    setConfirmOpen(true);
+  };
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -368,7 +437,7 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
         e.preventDefault();
         if (selectedParticipants.length > 0 && form.programId) {
           setSaveError("");
-          saveMutation.mutate();
+          setConfirmOpen(true);
         }
       }
       if (e.key === "Escape" && onClose) onClose();
@@ -412,8 +481,30 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
     );
   }
 
+  const todayLabel = new Date().toLocaleDateString("ca-ES", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const isToday = form.sessionDate === todayIso;
+
   return (
-    <div className={`ql-shell ${compact ? "ql-shell--compact" : ""}`}>
+    <div
+      className={`ql-shell ${compact ? "ql-shell--compact" : ""} ${volunteerMode ? "ql-shell--volunteer" : ""}`}
+    >
+      {showDateBanner && (
+        <div className="ql-date-banner" role="status" aria-live="polite">
+          S'ha posat la data d'avui ({todayLabel}). Registra el dia de l'activitat real.
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ marginLeft: "0.5rem", padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
+            onClick={() => setShowDateBanner(false)}
+          >
+            Entesos
+          </button>
+        </div>
+      )}
       {/* ── Top bar: meta + progress ──────────────────────────────── */}
       <div className="ql-topbar">
         <div className="ql-topbar-meta">
@@ -421,6 +512,8 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
             className="ql-meta-input ql-meta-program"
             value={form.programId}
             onChange={(e) => handleProgramChange(e.target.value)}
+            disabled={!!lockProgramId}
+            aria-readonly={!!lockProgramId}
           >
             <option value="">— Programa —</option>
             {programs.map((p) => (
@@ -441,11 +534,26 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
             ))}
           </div>
 
+          {!volunteerMode && (
+            <select
+              className="ql-meta-input"
+              value={filterSchoolId}
+              onChange={(e) => setFilterSchoolId(e.target.value)}
+              aria-label="Filtrar per escola"
+            >
+              <option value="">Totes les escoles</option>
+              {schools.map((s) => (
+                <option key={s.id} value={s.id}>{s.abbreviation}</option>
+              ))}
+            </select>
+          )}
+
           <input
             type="date"
             className="ql-meta-input ql-meta-date"
             value={form.sessionDate}
             onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
+            aria-label="Data de la sessió"
           />
 
           <div className="ql-meta-duration">
@@ -461,7 +569,7 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
 
           {/* ── Input mode segmented toggle ─────────────────────────── */}
           <div className="ql-mode-toggle" role="tablist" aria-label="Mode d'entrada">
-            {INPUT_MODE_OPTIONS.map(({ value, label, icon: Icon, hint }) => (
+            {inputModeOptions.map(({ value, label, icon: Icon, hint }) => (
               <button
                 key={value}
                 type="button"
@@ -496,8 +604,9 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
       </div>
 
       {/* ── Two-column body ───────────────────────────────────────── */}
-      <div className="ql-body">
+      <div className={`ql-body ${hideParticipantPool ? "ql-body--single" : ""}`}>
         {/* LEFT: Participants pool */}
+        {!hideParticipantPool && (
         <div className="ql-pool">
           <div className="ql-pool-header">
             <div className="ql-pool-title">
@@ -550,6 +659,7 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
                     >
                       <ParticipantAvatar name={p.first_name} size={28} />
                       <span className="ql-chip-name">{p.first_name}</span>
+                      <SchoolBadge abbreviation={p.school_abbreviation} name={p.school_name} />
                       {scored && <Check size={12} strokeWidth={3} className="ql-chip-check" />}
                       <span
                         className="ql-chip-x"
@@ -581,14 +691,16 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
                     onClick={() => toggleParticipant(p.id)}
                   >
                     <ParticipantAvatar name={p.first_name} size={28} />
-                    <span className="ql-chip-name">{p.first_name}</span>
-                    <span className="ql-chip-code">{p.code.slice(-3)}</span>
+                      <span className="ql-chip-name">{p.first_name}</span>
+                      <SchoolBadge abbreviation={p.school_abbreviation} name={p.school_name} />
+                      <span className="ql-chip-code">{p.code.slice(-3)}</span>
                   </motion.button>
                 ))}
               </AnimatePresence>
             </div>
           )}
         </div>
+        )}
 
         {/* RIGHT: Active participant scoring */}
         <div className="ql-active">
@@ -830,15 +942,71 @@ export function QuickSessionLogger({ onClose, compact = false }: { onClose?: () 
           <motion.button
             whileTap={{ scale: 0.96 }}
             disabled={saveMutation.isPending || !form.programId || selectedParticipants.length === 0}
-            onClick={() => { setSaveError(""); saveMutation.mutate(); }}
+            onClick={requestSave}
             className="ql-save-btn"
           >
             {saveMutation.isPending
               ? "Desant…"
-              : `Desar · ${selectedParticipants.length} ${selectedParticipants.length === 1 ? "participant" : "participants"}`}
+              : `Desar · ${selectedParticipants.length} ${selectedParticipants.length === 1 ? "alumne" : "alumnes"}`}
           </motion.button>
         </div>
       </div>
+
+      {confirmOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-save-title">
+          <div className="modal-content modal-content--md" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 id="confirm-save-title">Confirmar registre</h2>
+            </div>
+            <div className="modal-body">
+              {!isToday && (
+                <p className="form-error" role="alert">
+                  La data seleccionada ({form.sessionDate}) no és avui. Segur que vols registrar per aquest dia?
+                </p>
+              )}
+              <p><strong>Data:</strong> {form.sessionDate}</p>
+              <p><strong>Programa:</strong> {programs.find((p) => p.id === form.programId)?.name ?? "—"}</p>
+              <p><strong>Tipus:</strong> {SESSION_TYPES.find((t) => t.value === form.sessionType)?.label}</p>
+              <p style={{ marginTop: "0.75rem" }}>
+                <strong>És molt important</strong> afegir observacions qualitatives per cada alumne.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.88rem" }}>
+                {selectedParticipants.map((pid) => {
+                  const p = participants.find((x) => x.id === pid);
+                  const obs = form.observations[pid];
+                  const stars = obs
+                    ? `★ Ac:${obs.academicScore || 0} Co:${obs.cognitiveScore || 0} So:${obs.socialScore || 0} In:${obs.integrationScore || 0}`
+                    : "";
+                  const noteOk = (obs?.qualitativeNote?.trim().length ?? 0) > 0;
+                  return (
+                    <li key={pid} style={{ marginBottom: "0.35rem" }}>
+                      {p?.first_name} {p && <SchoolBadge abbreviation={p.school_abbreviation} name={p.school_name} />}{" "}
+                      {stars}
+                      {!noteOk && <span style={{ color: "var(--risk-high)" }}> · sense observació</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setConfirmOpen(false)}>
+                Cancel·lar
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={saveMutation.isPending}
+                onClick={() => {
+                  setConfirmOpen(false);
+                  saveMutation.mutate();
+                }}
+              >
+                Sí, registrar sessió
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
