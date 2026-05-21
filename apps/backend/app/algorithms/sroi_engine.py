@@ -17,8 +17,8 @@ _DEFAULT_PROXIES = {
     # €/participant for integration employment value
     # Source: Fundació Jaume Bofill 2023, updated from 800 → 1200
     "integration_eur_per_participant": 1200.0,
-    # €/hour educational supervision per PARTICIPANT (professional group support)
-    # Catalan socio-educational professional rate: €18/h per participant-hour
+    # €/hour educational supervision per session (professional group support)
+    # Catalan socio-educational professional rate: €18/h
     "attendance_eur_per_hour": 18.0,
 }
 
@@ -85,11 +85,10 @@ def _compute_sroi_breakdown(
         * pct_integration_gain
         * proxies["integration_eur_per_participant"]
     )
-    # Value = total participant-hours of professional educational support received.
-    # Each group session benefits ALL n_participants simultaneously.
+    # Value = total programme session-hours of professional educational support.
+    # sessions = total sessions across the programme (not per participant).
     attendance_raw = (
-        n_participants
-        * sessions
+        sessions
         * avg_duration_h
         * proxies["attendance_eur_per_hour"]
     )

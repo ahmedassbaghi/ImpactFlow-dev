@@ -1535,6 +1535,51 @@ async def donor_dashboard(
         "avg_ipi": current_ipi,
     }
 
+@app.get(f"{settings.api_prefix}/dashboard/donor/{{org_slug}}/sroi")
+async def donor_sroi(
+    org_slug: str,
+    cost_eur: float = Query(..., gt=0),
+    months: int = Query(9, ge=1),
+    program_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint SROI específico para portal de donante.
+    Usa la misma lógica que donor_dashboard para obtener inputs.
+    """
+
+    # Reutilizamos donor_dashboard para obtener inputs
+    dash = await donor_dashboard(org_slug, program_id, db)
+    inputs = dash.get("sroi_inputs", {})
+
+    return calculate_sroi(
+        n_participants=inputs.get("n_participants", 0),
+        avg_ipi_gain=inputs.get("avg_ipi_gain", 0.0),
+        program_cost_eur=cost_eur,
+        program_duration_months=months,
+    )
+
+@app.get(f"{settings.api_prefix}/organization/{{org_slug}}/programs/public")
+async def list_org_programs_public(
+    org_slug: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista pública de programas activos para selector del portal donante."""
+    org_q = await db.execute(select(Organization).where(Organization.slug == org_slug))
+    org = org_q.scalar_one_or_none()
+    if not org:
+        return []
+
+    prog_q = await db.execute(
+        select(Program.id, Program.name)
+        .where(
+            Program.organization_id == org.id,
+            Program.active == True
+        )
+        .order_by(Program.name.asc())
+    )
+
+    return [{"id": r[0], "name": r[1]} for r in prog_q.all()]
 
 @app.get(f"{settings.api_prefix}/micro-goals/templates")
 async def micro_goal_templates():
