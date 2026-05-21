@@ -1368,3 +1368,267 @@
   transition: opacity 0.15s;
 }
 .lr-tape-pill:hover .lr-tape-pill-x { opacity: 1; color: var(--risk-high); }
+
+
+/* ════════════════════════════════════════════════════════════════════
+   VOLUNTEER SECTIONS — desktop first
+   ════════════════════════════════════════════════════════════════════ */
+
+.ql-scoring--volunteer {
+  gap: 14px;
+}
+
+.ql-shell--volunteer .ql-active {
+  padding: 18px;
+  background: var(--surface-2);
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-row,
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-block,
+.ql-shell--volunteer .ql-section-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-row,
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-block {
+  padding: 18px;
+}
+
+.ql-section-card {
+  padding: 18px;
+}
+
+.ql-section-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.ql-section-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.ql-section-card-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.ql-section-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-500) 10%, transparent);
+  color: var(--brand-700);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.ql-context-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.2fr) minmax(190px, 0.9fr) minmax(240px, 1fr);
+  gap: 12px;
+}
+
+.ql-context-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.ql-context-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.ql-context-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ql-context-person-text {
+  min-width: 0;
+}
+
+.ql-context-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.ql-context-value--strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.ql-context-helper {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ql-date-card-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.ql-meta-date--section {
+  width: 100%;
+}
+
+.ql-help-box {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-row {
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-row .ql-block {
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-block .ql-block-label,
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-row .ql-block-label {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-bottom: 6px;
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-block .ql-block-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.ql-score-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.ql-score-mode-copy {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ql-shell--volunteer .ql-scoring--volunteer > .ql-block .ql-mode-toggle {
+  margin-left: 0;
+}
+
+.ql-inline-session-note {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ql-session-note--inline {
+  width: 100%;
+}
+
+.ql-shell--volunteer .ql-footer {
+  padding: 4px 18px 18px;
+  background: transparent;
+  border-top: none;
+  justify-content: flex-end;
+}
+
+.ql-shell--volunteer .ql-footer-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.ql-shell--volunteer .ql-save-error {
+  margin-right: auto;
+}
+
+@media (max-width: 980px) {
+  .ql-context-grid,
+  .ql-date-card-body,
+  .ql-shell--volunteer .ql-scoring--volunteer > .ql-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .ql-shell--volunteer .ql-active {
+    padding: 14px;
+  }
+
+  .ql-shell--volunteer .ql-scoring--volunteer > .ql-block,
+  .ql-shell--volunteer .ql-scoring--volunteer > .ql-row,
+  .ql-shell--volunteer .ql-section-card {
+    padding: 14px;
+  }
+
+  .ql-score-mode-row {
+    align-items: stretch;
+  }
+
+  .ql-score-mode-copy {
+    width: 100%;
+  }
+}
+
+/* Mood buttons con texto visible */
+.ql-mood-btn--labeled {
+  width: auto;
+  height: auto;
+  min-height: 38px;
+  padding: 6px 10px !important;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 52px;
+}
+
+.ql-mood-label {
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}

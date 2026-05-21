@@ -8,13 +8,10 @@ import { QuickSessionLogger } from "../sessions/QuickSessionLogger";
 import { PremiumSelect } from "./PremiumSelect";
 import { VolunteerParticipantRow } from "./VolunteerParticipantRow";
 
-type RegTab = "list" | "register";
-
 export function VolunteerSessionHub() {
   const [programId, setProgramId] = useState("");
   const [schoolId, setSchoolId] = useState("");
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<RegTab>("list");
   const [activeParticipantId, setActiveParticipantId] = useState<string | undefined>();
 
   const programsQ = useQuery({ queryKey: ["programs"], queryFn: () => listPrograms(true) });
@@ -52,11 +49,9 @@ export function VolunteerSessionHub() {
   const openForParticipant = (participantId: string) => {
     if (!programId) return;
     setActiveParticipantId(participantId);
-    setTab("register");
   };
 
   const closeRegister = () => {
-    setTab("list");
     setActiveParticipantId(undefined);
   };
 
@@ -72,45 +67,57 @@ export function VolunteerSessionHub() {
     ...schools.map((s) => ({ value: s.id, label: `${s.abbreviation} — ${s.name}` })),
   ];
 
+  // Si hay un participante activo, mostramos el formulario de registro
+  if (activeParticipantId && programId) {
+    return (
+      <div className="vol-page">
+        <div className="vol-reg-panel vol-reg-panel--form">
+          <div className="vol-reg-form-head">
+            <button
+              type="button"
+              className="vol-btn-back"
+              onClick={closeRegister}
+              aria-label="Tornar a la llista"
+            >
+              <ChevronLeft size={18} strokeWidth={2.5} aria-hidden />
+              Tornar a la llista
+            </button>
+            <div className="vol-reg-form-head-text">
+              <h2 className="vol-reg-form-title">Registrar sessió</h2>
+              {activeParticipant && (
+                <p className="vol-reg-form-sub">
+                  {activeParticipant.first_name}
+                  {activeParticipant.school_abbreviation
+                    ? ` · ${activeParticipant.school_abbreviation}`
+                    : ""}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="vol-reg-form-body">
+            <QuickSessionLogger
+              compact
+              volunteerMode
+              onClose={closeRegister}
+              initialParticipantIds={[activeParticipantId]}
+              lockProgramId={programId}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Vista principal: lista de alumnos
   return (
     <div className="vol-page">
       <header className="vol-page-head">
-        <h1 className="vol-page-title">Registre</h1>
+        <h1 className="vol-page-title">Registre de sessió</h1>
         <p className="vol-page-sub">
-          Filtra la llista i prem <strong>Registrar</strong> per passar a la pestanya de registre.
+          Selecciona un programa i una escola, busca l'alumne i prem <strong>Registrar</strong>.
         </p>
       </header>
 
-      <div className="vol-reg-tabs" role="tablist" aria-label="Registre de sessions">
-        <button
-          type="button"
-          role="tab"
-          id="vol-tab-list"
-          aria-selected={tab === "list"}
-          aria-controls="vol-panel-list"
-          className={`vol-reg-tab ${tab === "list" ? "vol-reg-tab--active" : ""}`}
-          onClick={() => setTab("list")}
-        >
-          Llista
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="vol-tab-register"
-          aria-selected={tab === "register"}
-          aria-controls="vol-panel-register"
-          className={`vol-reg-tab ${tab === "register" ? "vol-reg-tab--active" : ""}`}
-          onClick={() => {
-            if (activeParticipantId) setTab("register");
-          }}
-          disabled={!activeParticipantId}
-        >
-          Registrar
-        </button>
-      </div>
-
-      {tab === "list" && (
-      <>
       <div className="vol-filter-strip">
         <PremiumSelect
           label="Programa"
@@ -145,13 +152,6 @@ export function VolunteerSessionHub() {
         </label>
       </div>
 
-      <div
-        id="vol-panel-list"
-        role="tabpanel"
-        aria-labelledby="vol-tab-list"
-        hidden={tab !== "list"}
-        className="vol-reg-panel"
-      >
       {!programId ? (
         <p className="vol-hint-banner" role="status">
           Selecciona un programa per veure els alumnes assignats i registrar sessions.
@@ -196,57 +196,6 @@ export function VolunteerSessionHub() {
           )}
         </section>
       )}
-      </div>
-      </>
-      )}
-
-      <div
-        id="vol-panel-register"
-        role="tabpanel"
-        aria-labelledby="vol-tab-register"
-        hidden={tab !== "register"}
-        className="vol-reg-panel vol-reg-panel--form"
-      >
-        {tab === "register" && activeParticipantId && programId ? (
-          <>
-            <div className="vol-reg-form-head">
-              <button
-                type="button"
-                className="vol-btn-back"
-                onClick={closeRegister}
-                aria-label="Tornar a la llista"
-              >
-                <ChevronLeft size={18} strokeWidth={2.5} aria-hidden />
-                Llista
-              </button>
-              <div className="vol-reg-form-head-text">
-                <h2 className="vol-reg-form-title">Registrar sessió</h2>
-                {activeParticipant && (
-                  <p className="vol-reg-form-sub">
-                    {activeParticipant.first_name}
-                    {activeParticipant.school_abbreviation
-                      ? ` · ${activeParticipant.school_abbreviation}`
-                      : ""}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="vol-reg-form-body">
-              <QuickSessionLogger
-                compact
-                volunteerMode
-                onClose={closeRegister}
-                initialParticipantIds={[activeParticipantId]}
-                lockProgramId={programId}
-              />
-            </div>
-          </>
-        ) : (
-          <p className="vol-empty" role="status">
-            Selecciona un alumne a la pestanya Llista i prem Registrar.
-          </p>
-        )}
-      </div>
     </div>
   );
 }

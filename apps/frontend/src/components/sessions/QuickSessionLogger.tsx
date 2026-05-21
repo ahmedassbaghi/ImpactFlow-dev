@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Activity, BookOpen, Brain, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList,
-  Cloud, CloudRain, Compass, Globe, Meh, Search, Sparkles, Sun, UserCheck,
+  Activity, BookOpen, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList,
+  Cloud, CloudRain, Compass, Globe, Meh, MessageSquare, Search, Sparkles, Sun, Target, UserCheck,
   Users2, X, Zap, Star,
 } from "lucide-react";
 import { listMicroGoals } from "../../api/microGoals";
@@ -213,6 +213,9 @@ export function QuickSessionLogger({
     (p) => !filterSchoolId || p.school_id === filterSchoolId
   );
   const goals = goalsQ.data ?? [];
+
+  const selectedProgram = programs.find((p) => p.id === form.programId);
+  const sessionTypeLabel = SESSION_TYPES.find((t) => t.value === form.sessionType)?.label ?? "Grupal";
 
   // Auto-select program if only one (unless locked from hub)
   useEffect(() => {
@@ -492,7 +495,7 @@ export function QuickSessionLogger({
     <div
       className={`ql-shell ${compact ? "ql-shell--compact" : ""} ${volunteerMode ? "ql-shell--volunteer" : ""}`}
     >
-      {showDateBanner && (
+      {showDateBanner && !volunteerMode && (
         <div className="ql-date-banner" role="status" aria-live="polite">
           S'ha posat la data d'avui ({todayLabel}). Registra el dia de l'activitat real.
           <button
@@ -505,103 +508,107 @@ export function QuickSessionLogger({
           </button>
         </div>
       )}
-      {/* ── Top bar: meta + progress ──────────────────────────────── */}
-      <div className="ql-topbar">
-        <div className="ql-topbar-meta">
-          <select
-            className="ql-meta-input ql-meta-program"
-            value={form.programId}
-            onChange={(e) => handleProgramChange(e.target.value)}
-            disabled={!!lockProgramId}
-            aria-readonly={!!lockProgramId}
-          >
-            <option value="">— Programa —</option>
-            {programs.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-
-          <div className="ql-meta-pills">
-            {SESSION_TYPES.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                className={`ql-meta-pill ${form.sessionType === t.value ? "active" : ""}`}
-                onClick={() => setForm((prev) => ({ ...prev, sessionType: t.value }))}
+      {!volunteerMode && (
+        <>
+          {/* ── Top bar: meta + progress ──────────────────────────────── */}
+          <div className="ql-topbar">
+            <div className="ql-topbar-meta">
+              <select
+                className="ql-meta-input ql-meta-program"
+                value={form.programId}
+                onChange={(e) => handleProgramChange(e.target.value)}
+                disabled={!!lockProgramId}
+                aria-readonly={!!lockProgramId}
               >
-                {t.label}
-              </button>
-            ))}
-          </div>
+                <option value="">— Programa —</option>
+                {programs.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
 
-          {!volunteerMode && (
-            <select
-              className="ql-meta-input"
-              value={filterSchoolId}
-              onChange={(e) => setFilterSchoolId(e.target.value)}
-              aria-label="Filtrar per escola"
-            >
-              <option value="">Totes les escoles</option>
-              {schools.map((s) => (
-                <option key={s.id} value={s.id}>{s.abbreviation}</option>
-              ))}
-            </select>
-          )}
+              <div className="ql-meta-pills">
+                {SESSION_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`ql-meta-pill ${form.sessionType === t.value ? "active" : ""}`}
+                    onClick={() => setForm((prev) => ({ ...prev, sessionType: t.value }))}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
 
-          <input
-            type="date"
-            className="ql-meta-input ql-meta-date"
-            value={form.sessionDate}
-            onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
-            aria-label="Data de la sessió"
-          />
+              {!volunteerMode && (
+                <select
+                  className="ql-meta-input"
+                  value={filterSchoolId}
+                  onChange={(e) => setFilterSchoolId(e.target.value)}
+                  aria-label="Filtrar per escola"
+                >
+                  <option value="">Totes les escoles</option>
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>{s.abbreviation}</option>
+                  ))}
+                </select>
+              )}
 
-          <div className="ql-meta-duration">
-            <input
-              type="number"
-              min={5} max={240}
-              className="ql-meta-input ql-meta-mins"
-              value={form.durationMinutes}
-              onChange={(e) => setForm((prev) => ({ ...prev, durationMinutes: e.target.value }))}
-            />
-            <span className="ql-meta-mins-label">min</span>
-          </div>
-
-          {/* ── Input mode segmented toggle ─────────────────────────── */}
-          <div className="ql-mode-toggle" role="tablist" aria-label="Mode d'entrada">
-            {inputModeOptions.map(({ value, label, icon: Icon, hint }) => (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={form.inputMode === value}
-                className={`ql-mode-btn ${form.inputMode === value ? "active" : ""}`}
-                onClick={() => handleModeChange(value)}
-                title={hint}
-              >
-                <Icon size={13} strokeWidth={2.2} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {selectedParticipants.length > 0 && (
-          <div className="ql-progress-block">
-            <div className="ql-progress-label">
-              <strong>{scoredCount}</strong>/{selectedParticipants.length} puntuats
-            </div>
-            <div className="ql-progress-track">
-              <motion.div
-                className="ql-progress-fill"
-                initial={{ width: 0 }}
-                animate={{ width: `${completionPct}%` }}
-                transition={{ duration: 0.4 }}
+              <input
+                type="date"
+                className="ql-meta-input ql-meta-date"
+                value={form.sessionDate}
+                onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
+                aria-label="Data de la sessió"
               />
+
+              <div className="ql-meta-duration">
+                <input
+                  type="number"
+                  min={5} max={240}
+                  className="ql-meta-input ql-meta-mins"
+                  value={form.durationMinutes}
+                  onChange={(e) => setForm((prev) => ({ ...prev, durationMinutes: e.target.value }))}
+                />
+                <span className="ql-meta-mins-label">min</span>
+              </div>
+
+              {/* ── Input mode segmented toggle ─────────────────────────── */}
+              <div className="ql-mode-toggle" role="tablist" aria-label="Mode d'entrada">
+                {inputModeOptions.map(({ value, label, icon: Icon, hint }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="tab"
+                    aria-selected={form.inputMode === value}
+                    className={`ql-mode-btn ${form.inputMode === value ? "active" : ""}`}
+                    onClick={() => handleModeChange(value)}
+                    title={hint}
+                  >
+                    <Icon size={13} strokeWidth={2.2} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {selectedParticipants.length > 0 && (
+              <div className="ql-progress-block">
+                <div className="ql-progress-label">
+                  <strong>{scoredCount}</strong>/{selectedParticipants.length} puntuats
+                </div>
+                <div className="ql-progress-track">
+                  <motion.div
+                    className="ql-progress-fill"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${completionPct}%` }}
+                    transition={{ duration: 0.4 }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* ── Two-column body ───────────────────────────────────────── */}
       <div className={`ql-body ${hideParticipantPool ? "ql-body--single" : ""}`}>
@@ -721,7 +728,7 @@ export function QuickSessionLogger({
                 initial={{ opacity: 0, x: 8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.22 }}
-                className="ql-scoring"
+                className={`ql-scoring ${volunteerMode ? "ql-scoring--volunteer" : ""}`}
               >
                 <div className="ql-scoring-header">
                   <ParticipantAvatar name={p.first_name} size={48} />
@@ -755,6 +762,74 @@ export function QuickSessionLogger({
                   )}
                 </div>
 
+                {volunteerMode && (
+                  <>
+                    <div className="ql-section-card ql-section-card--context">
+                      <div className="ql-section-card-head">
+                        <div className="ql-section-card-title">
+                          <ClipboardList size={16} strokeWidth={2.1} />
+                          Context
+                        </div>
+                        <div className="ql-section-card-subtitle">Revisa les dades abans de registrar.</div>
+                      </div>
+
+                      <div className="ql-context-grid">
+                        <div className="ql-context-item">
+                          <div className="ql-context-label">Alumne</div>
+                          <div className="ql-context-person">
+                            <ParticipantAvatar name={p.first_name} size={40} />
+                            <div className="ql-context-person-text">
+                              <div className="ql-context-value ql-context-value--strong">{p.first_name}</div>
+                              <div className="ql-context-helper">{p.code}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="ql-context-item">
+                          <div className="ql-context-label">Escola</div>
+                          <div className="ql-context-value">
+                            <SchoolBadge abbreviation={p.school_abbreviation} name={p.school_name} />
+                          </div>
+                          <div className="ql-context-helper">{p.school_name}</div>
+                        </div>
+
+                        <div className="ql-context-item">
+                          <div className="ql-context-label">Programa</div>
+                          <div className="ql-context-value ql-context-value--strong">
+                            {selectedProgram?.name ?? "—"}
+                          </div>
+                          <div className="ql-context-helper">
+                            {sessionTypeLabel} · {form.durationMinutes || "45"} min
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="ql-section-card ql-section-card--date">
+                      <div className="ql-section-card-head">
+                        <div className="ql-section-card-title">
+                          <CalendarDays size={16} strokeWidth={2.1} />
+                          Data
+                        </div>
+                        {isToday && <span className="ql-section-badge">Avui automàtic</span>}
+                      </div>
+
+                      <div className="ql-date-card-body">
+                        <input
+                          type="date"
+                          className="ql-meta-input ql-meta-date ql-meta-date--section"
+                          value={form.sessionDate}
+                          onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
+                          aria-label="Data de la sessió"
+                        />
+                        <div className="ql-help-box">
+                          Per defecte es posa la data d'avui. Canvia-la només si registres una sessió d'un altre dia.
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="ql-row">
                   <div className="ql-block">
                     <div className="ql-block-label">
@@ -778,25 +853,25 @@ export function QuickSessionLogger({
                     </div>
                   </div>
 
-                  <div className="ql-block">
+                                    <div className="ql-block">
                     <div className="ql-block-label">
                       <Sparkles size={12} strokeWidth={2} />
-                      Estat anímic
+                      Estat d'ànim
                     </div>
                     <div className="ql-mood-row">
                       {MOOD_OPTIONS.map((m) => (
                         <motion.button
                           key={m.value}
                           type="button"
-                          title={m.label}
                           whileTap={{ scale: 0.85 }}
-                          className={`ql-mood-btn ${activeObs.mood === m.value ? "active" : ""}`}
+                          className={`ql-mood-btn ql-mood-btn--labeled ${activeObs.mood === m.value ? "active" : ""}`}
                           style={activeObs.mood === m.value
                             ? { borderColor: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)`, color: m.color }
                             : {}}
                           onClick={() => setObs(activeParticipantId, "mood", m.value)}
                         >
                           <m.Icon size={16} strokeWidth={2} />
+                          <span className="ql-mood-label">{m.label}</span>
                         </motion.button>
                       ))}
                     </div>
@@ -814,6 +889,28 @@ export function QuickSessionLogger({
                       {form.inputMode === "reactions" && "Toca xips a mesura que observes · scores derivats"}
                     </span>
                   </div>
+
+                  {volunteerMode && (
+                    <div className="ql-score-mode-row">
+                      <div className="ql-score-mode-copy">Tria com vols puntuar</div>
+                      <div className="ql-mode-toggle" role="tablist" aria-label="Mode d'entrada">
+                        {inputModeOptions.map(({ value, label, icon: Icon, hint }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            role="tab"
+                            aria-selected={form.inputMode === value}
+                            className={`ql-mode-btn ${form.inputMode === value ? "active" : ""}`}
+                            onClick={() => handleModeChange(value)}
+                            title={hint}
+                          >
+                            <Icon size={13} strokeWidth={2.2} />
+                            <span>{label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {form.inputMode === "stars" && (
                     <div className="ql-dim-grid">
@@ -884,6 +981,22 @@ export function QuickSessionLogger({
                         : `Avui, ${p.first_name} ha…`
                     }
                   />
+
+                  {volunteerMode && (
+                    <div className="ql-inline-session-note">
+                      <div className="ql-block-label">
+                        <MessageSquare size={12} strokeWidth={2} />
+                        Nota general de la sessió (opcional)
+                      </div>
+                      <input
+                        type="text"
+                        className="ql-session-note ql-session-note--inline"
+                        placeholder="Ex.: Sessió tranquil·la, bon ambient, bona participació…"
+                        value={form.notes}
+                        onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {goals.length > 0 && (
@@ -926,7 +1039,7 @@ export function QuickSessionLogger({
 
       {/* ── Footer ───────────────────────────────────────────────── */}
       <div className="ql-footer">
-        {selectedParticipants.length > 0 && (
+        {selectedParticipants.length > 0 && !volunteerMode && (
           <input
             type="text"
             className="ql-session-note"
