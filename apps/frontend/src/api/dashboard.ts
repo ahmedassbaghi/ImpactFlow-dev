@@ -75,8 +75,10 @@ export async function getCostEffectiveness(
   };
 }
 
-export async function getDonorDashboard(orgSlug: string) {
-  const { data } = await apiClient.get(`/dashboard/donor/${orgSlug}`);
+export async function getDonorDashboard(orgSlug: string, programId?: string) {
+  const { data } = await apiClient.get(`/dashboard/donor/${orgSlug}`, {
+    params: programId ? { program_id: programId } : undefined,
+  });
   return data;
 }
 
@@ -174,4 +176,9 @@ export async function getEvidenceExport(
     },
   });
   return data;
+}
+
+export async function getPublicPrograms(orgSlug: string) {
+  const { data } = await apiClient.get(`/organization/${orgSlug}/programs/public`);
+  return data as Array<{ id: string; name: string }>;
 }

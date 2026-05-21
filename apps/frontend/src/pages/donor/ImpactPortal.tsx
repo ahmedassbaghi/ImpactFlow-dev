@@ -5,9 +5,9 @@ import { Cell, Pie, PieChart, Tooltip, ResponsiveContainer } from "recharts";
 import {
   BookOpen, Brain, Users2, Globe,
   BarChart3, FlaskConical, Ruler, RefreshCw,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Filter,
 } from "lucide-react";
-import { getDonorDashboard, getDonorSROI, getInterventionEffect } from "../../api/dashboard";
+import { getDonorDashboard, getDonorSROI, getInterventionEffect, getPublicPrograms } from "../../api/dashboard";
 import SROIStatement from "../../components/sroi/SROIStatement";
 import SROIBreakdown from "../../components/sroi/SROIBreakdown";
 
@@ -65,6 +65,19 @@ function AnimatedCounter({ target, decimals = 0, suffix = "" }: { target: number
   return <span>{display}</span>;
 }
 
+function HeroSkeleton() {
+  return (
+    <div className="donor-counters">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="donor-counter-card donor-counter-card--loading">
+          <div className="donor-skeleton donor-skeleton--value" />
+          <div className="donor-skeleton donor-skeleton--label" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function InfoBox({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -82,10 +95,11 @@ export default function ImpactPortalPage() {
   const [costEur, setCostEur] = useState(DEFAULT_COST_EUR);
   const [months, setMonths] = useState(DEFAULT_MONTHS);
   const [costInput, setCostInput] = useState(String(DEFAULT_COST_EUR));
+  const [selectedProgramId, setSelectedProgramId] = useState<string>("");
 
-  const { data: donor } = useQuery({
-    queryKey: ["donor-dashboard", ORG_SLUG],
-    queryFn: () => getDonorDashboard(ORG_SLUG),
+  const { data: donor, isLoading: donorLoading } = useQuery({
+    queryKey: ["donor-dashboard", ORG_SLUG, selectedProgramId],
+    queryFn: () => getDonorDashboard(ORG_SLUG, selectedProgramId || undefined),
   });
 
   const programId = donor?.program_id;
@@ -97,15 +111,28 @@ export default function ImpactPortalPage() {
   });
 
   const { data: sroi, isLoading: sroiLoading, isError: sroiError } = useQuery({
-    queryKey: ["donor-sroi", ORG_SLUG, programId, costEur, months],
-    queryFn: () => getDonorSROI(ORG_SLUG, costEur, months, programId),
-    enabled: !!programId,
+    queryKey: ["donor-sroi", ORG_SLUG, selectedProgramId, costEur, months],
+    queryFn: () => getDonorSROI(ORG_SLUG, costEur, months, selectedProgramId || undefined),
+  });
+
+  const { data: programs } = useQuery({
+    queryKey: ["donor-programs", ORG_SLUG],
+    queryFn: () => getPublicPrograms(ORG_SLUG),
   });
 
   useEffect(() => {
-    const v = Number(costInput);
-    if (v > 0) setCostEur(v);
+    const timer = setTimeout(() => {
+      const v = Number(costInput);
+      if (!isNaN(v) && v >= 100) {
+        setCostEur(v);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [costInput]);
+
+  const donorReady = !donorLoading && !!donor;
+  const sroiReady = !sroiLoading && !!sroi;
 
   const nParticipants = donor?.n_participants ?? 0;
   const avgIpiGainPct = donor?.avg_ipi_gain_pct ?? 0;
@@ -122,7 +149,7 @@ export default function ImpactPortalPage() {
   const ci = effect?.confidence_interval_95 ?? null;
   const narrative = effect?.narrative ?? donor?.narrative ?? null;
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8013/api/v1";
+  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8012/api/v1";
 
   const handleDownloadEvidence = () => {
     if (!programId) return;
@@ -142,31 +169,62 @@ export default function ImpactPortalPage() {
           <p className="donor-hero-subtitle">
             Dades reals, metodologia rigorosa, transparència total.
           </p>
-          <div className="donor-counters">
-            <div className="donor-counter-card">
-              <div className="donor-counter-value">
-                <AnimatedCounter target={nParticipants} />
+
+          {!donorReady || !sroiReady ? (
+            <HeroSkeleton />
+          ) : (
+            <div className="donor-counters">
+              <div className="donor-counter-card">
+                <div className="donor-counter-value">
+                  <AnimatedCounter target={nParticipants} />
+                </div>
+                <div className="donor-counter-label">Infants acompanyats</div>
               </div>
-              <div className="donor-counter-label">Infants acompanyats</div>
-            </div>
-            <div className="donor-counter-card">
-              <div className="donor-counter-value">
-                <AnimatedCounter target={avgIpiGainPct} decimals={1} suffix="%" />
+              <div className="donor-counter-card">
+                <div className="donor-counter-value">
+                  <AnimatedCounter target={avgIpiGainPct} decimals={1} suffix=" pts" />
+                </div>
+                <div className="donor-counter-label">Millora mitjana IPI</div>
               </div>
-              <div className="donor-counter-label">Millora de progrés (IPI)</div>
-            </div>
-            <div className="donor-counter-card">
-              <div className="donor-counter-value">
-                €<AnimatedCounter target={sroiRatio} decimals={2} />
+              <div className="donor-counter-card">
+                <div className="donor-counter-value">
+                  €<AnimatedCounter target={sroiRatio} decimals={2} />
+                </div>
+                <div className="donor-counter-label">Valor social per cada €1 invertit</div>
               </div>
-              <div className="donor-counter-label">Valor social per cada €1 invertit</div>
             </div>
-          </div>
-          <button type="button" className="donor-cta-btn" onClick={handleDownloadEvidence}>
+          )}
+
+          <button
+            type="button"
+            className="donor-cta-btn"
+            onClick={handleDownloadEvidence}
+            disabled={!donorReady}
+          >
             Descarrega l'informe complet
           </button>
         </div>
       </section>
+
+      {/* ── SELECTOR PROGRAMA ──────────────────────────────────── */}
+      <div className="donor-selector-bar">
+        <div className="donor-selector-inner">
+          <Filter size={16} className="donor-selector-icon" />
+          <span className="donor-selector-label">Veure dades de:</span>
+          <select
+            className="donor-program-select"
+            value={selectedProgramId}
+            onChange={(e) => setSelectedProgramId(e.target.value)}
+          >
+            <option value="">Tots els programes</option>
+            {programs?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {/* ── 2. FUNCIÓ DE NARINAN ───────────────────────────────── */}
       <section className="donor-section">
@@ -183,56 +241,69 @@ export default function ImpactPortalPage() {
         </div>
       </section>
 
-      {/* ── 3. ABANS I ARA (mogut abans de metodologia) ─────────── */}
+      {/* ── 3. ABANS I ARA ─────────────────────────────────────── */}
       <section className="donor-section donor-section-alt">
         <h2 className="donor-section-title">Abans i ara</h2>
         <p className="donor-section-sub">
           Evolució de cada dimensió des del moment d'entrada al programa fins avui.
+          La puntuació IPI va de 0 a 100 punts.
         </p>
-        <div className="before-after-grid">
-          {Object.entries(dimEvolution).map(([dim, data]: [string, any]) => {
-            const baseline = data?.baseline ?? 0;
-            const current = data?.current ?? 0;
-            const gain = data?.gain ?? 0;
-            return (
-              <div key={dim} className="before-after-item">
-                <div className="before-after-header">
-                  <div>
-                    <span className="before-after-dim" style={{ color: DIM_COLORS[dim] }}>
-                      {DIM_LABELS[dim] ?? dim}
+
+        {!donorReady ? (
+          <div className="donor-loading-block">
+            <div className="donor-skeleton donor-skeleton--card" />
+            <div className="donor-skeleton donor-skeleton--card" />
+          </div>
+        ) : Object.keys(dimEvolution).length === 0 ? (
+          <p className="donor-empty-msg">
+            Encara no hi ha prou dades per mostrar l'evolució per dimensions.
+          </p>
+        ) : (
+          <div className="before-after-grid">
+            {Object.entries(dimEvolution).map(([dim, data]: [string, any]) => {
+              const baseline = data?.baseline ?? 0;
+              const current = data?.current ?? 0;
+              const gain = data?.gain ?? 0;
+              return (
+                <div key={dim} className="before-after-item">
+                  <div className="before-after-header">
+                    <div>
+                      <span className="before-after-dim" style={{ color: DIM_COLORS[dim] }}>
+                        {DIM_LABELS[dim] ?? dim}
+                      </span>
+                      <div className="before-after-dim-desc">{DIM_DESCS[dim]}</div>
+                    </div>
+                    <span className="before-after-gain" style={{ color: gain > 0 ? "var(--risk-low)" : gain < 0 ? "var(--risk-high)" : "var(--text-muted)" }}>
+                      {gain > 0 ? "+" : ""}{gain.toFixed(1)} pts
                     </span>
-                    <div className="before-after-dim-desc">{DIM_DESCS[dim]}</div>
                   </div>
-                  <span className="before-after-gain" style={{ color: gain > 0 ? "var(--risk-low)" : gain < 0 ? "var(--risk-high)" : "var(--text-muted)" }}>
-                    {gain > 0 ? "+" : ""}{gain.toFixed(1)} pts
-                  </span>
-                </div>
-                <div className="before-after-bars">
-                  <div className="before-after-bar-row">
-                    <span className="before-after-bar-label">Entrada</span>
-                    <div className="before-after-bar-track">
-                      <motion.div className="before-after-bar" style={{ background: "var(--surface-3)" }} initial={{ width: 0 }} animate={{ width: `${Math.min(baseline, 100)}%` }} transition={{ duration: 1.2, ease: "easeOut" }} />
+                  <div className="before-after-bars">
+                    <div className="before-after-bar-row">
+                      <span className="before-after-bar-label">Entrada</span>
+                      <div className="before-after-bar-track">
+                        <motion.div className="before-after-bar" style={{ background: "var(--surface-3)" }} initial={{ width: 0 }} animate={{ width: `${Math.min(baseline, 100)}%` }} transition={{ duration: 1.2, ease: "easeOut" }} />
+                      </div>
+                      <span className="before-after-bar-pct">{baseline.toFixed(0)} pts</span>
                     </div>
-                    <span className="before-after-bar-pct">{baseline.toFixed(0)}%</span>
-                  </div>
-                  <div className="before-after-bar-row">
-                    <span className="before-after-bar-label">Ara</span>
-                    <div className="before-after-bar-track">
-                      <motion.div className="before-after-bar" style={{ background: DIM_COLORS[dim] }} initial={{ width: 0 }} animate={{ width: `${Math.min(current, 100)}%` }} transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }} />
+                    <div className="before-after-bar-row">
+                      <span className="before-after-bar-label">Ara</span>
+                      <div className="before-after-bar-track">
+                        <motion.div className="before-after-bar" style={{ background: DIM_COLORS[dim] }} initial={{ width: 0 }} animate={{ width: `${Math.min(current, 100)}%` }} transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }} />
+                      </div>
+                      <span className="before-after-bar-pct">{current.toFixed(0)} pts</span>
                     </div>
-                    <span className="before-after-bar-pct">{current.toFixed(0)}%</span>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* ── 4. SROI ───────────────────────────────────────────── */}
       <section className="donor-section">
         <h2 className="donor-section-title">Retorn social de la inversió (SROI)</h2>
-        {sroiLoading && <p className="muted">Calculant SROI…</p>}
+        {sroiLoading && <p className="donor-loading-text">Calculant SROI…</p>}
         {sroiError && <p className="form-error" role="alert">No s'ha pogut calcular l'SROI. Comprova la connexió.</p>}
         {sroi && (
           <>
@@ -284,7 +355,7 @@ export default function ImpactPortalPage() {
         <div className="donor-accordion-body">
         <p className="donor-section-sub" style={{ marginTop: "0.75rem" }}>
           L'<strong>Índex de Progrés Integral (IPI)</strong> és la brúixola del programa.
-          Mesura el progrés de cada infant en quatre dimensions clau, de 0 a 100.
+          Mesura el progrés de cada infant en quatre dimensions clau, en una escala de 0 a 100 punts.
           Al principi, cada educador/a fa una avaluació inicial (el "punt de partida")
           i a partir d'aquí mesurem com evoluciona cada infant al llarg del curs.
         </p>
@@ -323,7 +394,7 @@ export default function ImpactPortalPage() {
           <div className="donor-stats-guide-item">
             <span className="donor-stats-guide-label">Punt de partida</span>
             <span className="donor-stats-guide-desc">
-              La puntuació inicial de cada infant quan entra al programa. Serveix de referència per mesurar tot el progrés posterior.
+              La puntuació IPI inicial de cada infant quan entra al programa (escala 0–100 pts). Serveix de referència per mesurar tot el progrés posterior.
             </span>
           </div>
           <div className="donor-stats-guide-item">
@@ -362,7 +433,7 @@ export default function ImpactPortalPage() {
               Cohen's d
             </div>
             <div className="stat-evidence-hint">
-              {cohensD == null ? "Dades insuficients"
+              {cohensD == null ? "Encara no hi ha prou dades per estimar l'efecte"
                 : cohensD >= 0.8 ? "Gran — millora molt notable"
                 : cohensD >= 0.5 ? "Moderat — millora rellevant"
                 : cohensD >= 0.2 ? "Petit — millora real però moderada"
@@ -379,9 +450,10 @@ export default function ImpactPortalPage() {
               p-valor (Wilcoxon)
             </div>
             <div className="stat-evidence-hint">
-              {pValue != null && pValue < 0.05
-                ? "La millora NO és per atzar (p < 0.05)"
-                : "No hi ha prou evidència estadística (p ≥ 0.05)"}
+              {pValue == null ? "Calen més sessions registrades per calcular la significació"
+                : pValue < 0.05
+                  ? "La millora NO és per atzar (p < 0.05)"
+                  : "No hi ha prou evidència estadística (p ≥ 0.05)"}
             </div>
           </div>
 
@@ -389,7 +461,7 @@ export default function ImpactPortalPage() {
             <div className="stat-evidence-card">
               <div className="stat-evidence-label">Interval de confiança 95%</div>
               <div className="stat-evidence-value" style={{ fontSize: "1.1rem" }}>
-                [{ci[0]?.toFixed(1)}, {ci[1]?.toFixed(1)}]
+                [{ci[0]?.toFixed(1)}, {ci[1]?.toFixed(1)}] pts
               </div>
               <div className="stat-evidence-badge" style={{ background: "var(--brand-100)", color: "var(--brand-700)" }}>
                 Bootstrap CI
@@ -415,8 +487,17 @@ export default function ImpactPortalPage() {
         <p className="donor-section-sub" style={{ marginTop: "0.75rem" }}>
           Distribució d'alumnes per nivell de risc. El risc es calcula setmanalment segons assistència, IPI i objectius.
         </p>
-        <div className="methodology-layout">
-          {riskPieData.length > 0 && (
+
+        {!donorReady ? (
+          <div className="donor-loading-block">
+            <div className="donor-skeleton donor-skeleton--card" />
+          </div>
+        ) : riskPieData.length === 0 ? (
+          <p className="donor-empty-msg">
+            Encara no hi ha prou dades per mostrar la distribució de risc.
+          </p>
+        ) : (
+          <div className="methodology-layout">
             <div className="methodology-risk">
               <div className="methodology-risk-donut">
                 <ResponsiveContainer width="100%" height={180}>
@@ -448,33 +529,33 @@ export default function ImpactPortalPage() {
                 ))}
               </div>
             </div>
-          )}
 
-          <div className="methodology-seals-block">
-            <div className="methodology-seals-title">Metodologia certificada</div>
-            <div className="methodology-seals">
-              {[
-                { key: "SROI Network Standard",    desc: "Estàndard internacional per monetitzar impacte social" },
-                { key: "OECD DAC Criteria",         desc: "Criteris d'avaluació de rellevància, eficiència i impacte" },
-                { key: "Estadística no paramètrica", desc: "Wilcoxon signed-rank test, robust a distribucions no normals" },
-                { key: "Bootstrap CI 95%",           desc: "2.000 simulacions per estimar incertesa estadística" },
-              ].map((s) => {
-                const Icon = SEAL_ICONS[s.key] ?? BarChart3;
-                return (
-                  <div key={s.key} className="methodology-seal-card">
-                    <div className="seal-icon-lg">
-                      <Icon size={20} strokeWidth={1.8} />
+            <div className="methodology-seals-block">
+              <div className="methodology-seals-title">Metodologia certificada</div>
+              <div className="methodology-seals">
+                {[
+                  { key: "SROI Network Standard",    desc: "Estàndard internacional per monetitzar impacte social" },
+                  { key: "OECD DAC Criteria",         desc: "Criteris d'avaluació de rellevància, eficiència i impacte" },
+                  { key: "Estadística no paramètrica", desc: "Wilcoxon signed-rank test, robust a distribucions no normals" },
+                  { key: "Bootstrap CI 95%",           desc: "2.000 simulacions per estimar incertesa estadística" },
+                ].map((s) => {
+                  const Icon = SEAL_ICONS[s.key] ?? BarChart3;
+                  return (
+                    <div key={s.key} className="methodology-seal-card">
+                      <div className="seal-icon-lg">
+                        <Icon size={20} strokeWidth={1.8} />
+                      </div>
+                      <div>
+                        <div className="seal-label">{s.key}</div>
+                        <div className="seal-desc">{s.desc}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="seal-label">{s.key}</div>
-                      <div className="seal-desc">{s.desc}</div>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div style={{ textAlign: "center", marginTop: "2rem" }}>
           <button type="button" className="donor-evidence-btn" onClick={handleDownloadEvidence}>

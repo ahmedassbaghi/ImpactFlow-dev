@@ -781,3 +781,143 @@
     margin: 0 auto;
   }
 }
+
+/* ── Loading states & skeletons ─────────────────────────────────────────── */
+
+.donor-ui .donor-counter-card--loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.donor-ui .donor-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.15) 100%
+  );
+  background-size: 200% 100%;
+  animation: donor-shimmer 1.5s ease-in-out infinite;
+}
+
+.donor-ui .donor-skeleton--value {
+  width: 80px;
+  height: 2rem;
+}
+
+.donor-ui .donor-skeleton--label {
+  width: 120px;
+  height: 0.85rem;
+}
+
+.donor-ui .donor-skeleton--card {
+  width: 100%;
+  height: 120px;
+  border-radius: 14px;
+}
+
+.donor-ui .donor-loading-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.donor-ui .donor-loading-block .donor-skeleton {
+  background: linear-gradient(
+    90deg,
+    #e8edf2 0%,
+    #f1f5f9 50%,
+    #e8edf2 100%
+  );
+  background-size: 200% 100%;
+  animation: donor-shimmer 1.5s ease-in-out infinite;
+}
+
+.donor-ui .donor-loading-text {
+  color: var(--donor-muted);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.donor-ui .donor-empty-msg {
+  color: var(--donor-muted);
+  font-size: 0.88rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  background: var(--donor-bg);
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  line-height: 1.5;
+}
+
+.donor-ui .donor-cta-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes donor-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ... (añadir al final) */
+
+.donor-selector-bar {
+  background: white;
+  border-bottom: 1px solid #e8edf2;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.donor-selector-inner {
+  max-width: 1024px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.donor-selector-icon {
+  color: var(--narinan);
+}
+
+.donor-selector-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--donor-muted);
+}
+
+.donor-program-select {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--donor-text);
+  background: white;
+  cursor: pointer;
+  outline: none;
+}
+
+.donor-program-select:focus {
+  border-color: var(--narinan);
+}
+
+.input-error {
+  border-color: #ef4444 !important;
+  background-color: #fef2f2 !important;
+}
+
+.donor-skeleton--card {
+  width: 100%;
+  height: 200px;
+}
