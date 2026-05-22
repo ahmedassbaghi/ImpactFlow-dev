@@ -2,19 +2,53 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Activity, BookOpen, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList,
-  Cloud, CloudRain, Compass, Globe, Meh, MessageSquare, Search, Sparkles, Sun, Target, UserCheck,
-  Users2, X, Zap, Star,
+  Activity,
+  BookOpen,
+  Brain,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Cloud,
+  CloudRain,
+  Compass,
+  Globe,
+  Hand,
+  Handshake,
+  ListChecks,
+  Meh,
+  Minus,
+  MessageSquare,
+  Mic,
+  RotateCcw,
+  Rocket,
+  Search,
+  Sparkles,
+  Sun,
+  Tag,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  UserCheck,
+  Users2,
+  X,
+  Zap,
+  Star,
+  type LucideIcon,
 } from "lucide-react";
-import { listMicroGoals } from "../../api/microGoals";
+import { listMicroGoals, listParticipantActiveGoals, type IndividualMicroGoal } from "../../api/microGoals";
 import { getEnrolledParticipants, listParticipants, type Participant } from "../../api/participants";
 import { listPrograms } from "../../api/programs";
 import { listSchools } from "../../api/schools";
+import { listSessionActivityTags, type SessionActivityTag } from "../../api/sessionActivityTags";
 import { SchoolBadge } from "../common/SchoolBadge";
 import { createSession } from "../../api/sessions";
 import { useLocalDraft } from "../../hooks/useLocalDraft";
 import { OutcomesStar } from "./OutcomesStar";
 import { LiveReactions } from "./LiveReactions";
+import { SessionTimePicker, defaultSessionTime } from "./SessionTimePicker";
 import {
   deriveScoreFromEvents, noteFromStarAnchors, noteFromEvents,
   type DimKey as DataDimKey, type InputMode, type ReactionEvent,
@@ -49,15 +83,47 @@ const ATTENDANCE_OPTIONS = [
   { value: "absent_unjustified",  label: "Absent",         color: "var(--risk-high)" },
 ];
 
-const QUICK_TAGS = [
-  { label: "Atenció sostinguda", icon: "🎯", insert: "Ha mostrat atenció sostinguda durant tota l'activitat, sense distraccions. " },
-  { label: "Iniciativa", icon: "🚀", insert: "Ha pres la iniciativa per començar i acabar la tasca sense recordatoris. " },
-  { label: "Cooperació", icon: "🤝", insert: "Ha cooperat bé amb els companys, compartint materials i idees. " },
-  { label: "Frustració", icon: "😤", insert: "S'ha frustrat davant la dificultat; cal reforç emocional. " },
-  { label: "Millora notable", icon: "📈", insert: "Mostra una millora notable respecte la sessió anterior en aquest contingut. " },
-  { label: "Necessita reforç", icon: "🔁", insert: "Necessita reforç en aquest contingut abans d'avançar. " },
-  { label: "Participació activa", icon: "✋", insert: "Ha participat activament fent preguntes i propostes. " },
-  { label: "Segueix instruccions", icon: "📋", insert: "Segueix les instruccions amb autonomia creixent. " },
+const QUICK_TAGS: { label: string; Icon: LucideIcon; insert: string }[] = [
+  {
+    label: "Atenció sostinguda",
+    Icon: Target,
+    insert: "Ha mostrat atenció sostinguda durant tota l'activitat, sense distraccions. ",
+  },
+  {
+    label: "Iniciativa",
+    Icon: Rocket,
+    insert: "Ha pres la iniciativa per començar i acabar la tasca sense recordatoris. ",
+  },
+  {
+    label: "Cooperació",
+    Icon: Handshake,
+    insert: "Ha cooperat bé amb els companys, compartint materials i idees. ",
+  },
+  {
+    label: "Frustració",
+    Icon: Meh,
+    insert: "S'ha frustrat davant la dificultat; cal reforç emocional. ",
+  },
+  {
+    label: "Millora notable",
+    Icon: TrendingUp,
+    insert: "Mostra una millora notable respecte la sessió anterior en aquest contingut. ",
+  },
+  {
+    label: "Necessita reforç",
+    Icon: RotateCcw,
+    insert: "Necessita reforç en aquest contingut abans d'avançar. ",
+  },
+  {
+    label: "Participació activa",
+    Icon: Hand,
+    insert: "Ha participat activament fent preguntes i propostes. ",
+  },
+  {
+    label: "Segueix instruccions",
+    Icon: ListChecks,
+    insert: "Segueix les instruccions amb autonomia creixent. ",
+  },
 ];
 
 const STAR_LABELS = ["", "Molt baix", "Baix", "Regular", "Bé", "Excel·lent"];
@@ -72,6 +138,14 @@ interface ObsState {
   /** Whether the user has typed in the textarea after auto-generation
    *  from anchors / reactions; protects manual edits from being clobbered. */
   noteEdited: boolean;
+  /** Bespoke session-registration extensions (universal across input modes). */
+  arrivalMood: string;
+  departureMood: string;
+  verbalParticipation: number | null;  // 0..3
+  /** Per individual micro-goal id → GAS score (-2..+2). */
+  goalProgress: Record<string, number>;
+  /** Volunteer gut-feel vs last session (no numbers shown). */
+  progressSense: "" | "progressed" | "similar" | "step_back";
 }
 
 const defaultObs = (): ObsState => ({
@@ -79,21 +153,96 @@ const defaultObs = (): ObsState => ({
   qualitativeNote: "", mood: "neutral", attendance: "present", microGoalIds: [],
   events: [],
   noteEdited: false,
+  arrivalMood: "",
+  departureMood: "",
+  verbalParticipation: null,
+  goalProgress: {},
+  progressSense: "",
 });
 
 interface FormState {
-  programId: string; sessionType: string; sessionDate: string;
+  programId: string; sessionType: string; sessionDate: string; sessionTime: string;
   durationMinutes: string; notes: string; observations: Record<string, ObsState>;
   /** Per-session input paradigm; persisted so refresh keeps the choice. */
   inputMode: InputMode;
+  /** Org-scoped activity tags selected for the whole session. */
+  activityTagIds: string[];
 }
 
 const defaultForm = (): FormState => ({
   programId: "", sessionType: "group",
   sessionDate: new Date().toISOString().slice(0, 10),
+  sessionTime: defaultSessionTime(),
   durationMinutes: "45", notes: "", observations: {},
   inputMode: "stars",
+  activityTagIds: [],
 });
+
+const VERBAL_PARTICIPATION_OPTIONS = [
+  { value: 0, label: "No parla",    short: "0" },
+  { value: 1, label: "Si li ho demanen", short: "1" },
+  { value: 2, label: "Espontàniament",   short: "2" },
+  { value: 3, label: "Lidera la conversa", short: "3" },
+] as const;
+
+const PROGRESS_SENSE_OPTIONS = [
+  {
+    value: "progressed" as const,
+    label: "Ha progressat",
+    sub: "Millora clara respecte l'última sessió",
+    Icon: TrendingUp,
+    color: "var(--risk-low)",
+  },
+  {
+    value: "similar" as const,
+    label: "Similar",
+    sub: "Sense canvis rellevants",
+    Icon: Minus,
+    color: "var(--text-muted)",
+  },
+  {
+    value: "step_back" as const,
+    label: "Un pas enrere",
+    sub: "Sembla que ha empitjorat",
+    Icon: TrendingDown,
+    color: "var(--risk-high)",
+  },
+] as const;
+
+const GAS_LEVELS = [
+  { value: -2, label: "Molt pitjor",  color: "var(--risk-high)" },
+  { value: -1, label: "Pitjor",       color: "var(--risk-medium)" },
+  { value:  0, label: "Esperat",      color: "var(--text-muted)" },
+  { value: +1, label: "Millor",       color: "var(--dim-integration)" },
+  { value: +2, label: "Molt millor",  color: "var(--risk-low)" },
+] as const;
+
+function GASControl({
+  value, onChange,
+}: { value: number | undefined; onChange: (v: number) => void }) {
+  return (
+    <div className="ql-gas">
+      {GAS_LEVELS.map((lv) => {
+        const active = value === lv.value;
+        return (
+          <button
+            key={lv.value}
+            type="button"
+            className={`ql-gas-btn ${active ? "active" : ""}`}
+            style={active
+              ? { borderColor: lv.color, color: lv.color, background: `color-mix(in srgb, ${lv.color} 12%, transparent)` }
+              : {}}
+            onClick={() => onChange(lv.value)}
+            title={lv.label}
+          >
+            <span className="ql-gas-num">{lv.value > 0 ? `+${lv.value}` : lv.value}</span>
+            <span className="ql-gas-label">{lv.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const INPUT_MODE_OPTIONS: { value: InputMode; label: string; icon: React.ElementType; hint: string }[] = [
   { value: "stars",     label: "Estrelles",      icon: Star,    hint: "Ràpid · 1-5 ★ per dimensió"  },
@@ -206,6 +355,10 @@ export function QuickSessionLogger({
     queryFn: () => listMicroGoals({ programId: form.programId }),
     enabled: !!form.programId,
   });
+  const activityTagsQ = useQuery({
+    queryKey: ["session-activity-tags"],
+    queryFn: () => listSessionActivityTags(true),
+  });
 
   const programs = programsQ.data ?? [];
   const schools = schoolsQ.data ?? [];
@@ -213,6 +366,7 @@ export function QuickSessionLogger({
     (p) => !filterSchoolId || p.school_id === filterSchoolId
   );
   const goals = goalsQ.data ?? [];
+  const activityTags = activityTagsQ.data ?? [];
 
   const selectedProgram = programs.find((p) => p.id === form.programId);
   const sessionTypeLabel = SESSION_TYPES.find((t) => t.value === form.sessionType)?.label ?? "Grupal";
@@ -242,11 +396,20 @@ export function QuickSessionLogger({
 
   const activeParticipantId = selectedParticipants[activeIdx] ?? "";
   // Merge with defaultObs so legacy localStorage entries gain new fields
-  // (events, noteEdited) without runtime errors.
+  // (events, noteEdited, GAS extensions) without runtime errors.
   const activeObs: ObsState = {
     ...defaultObs(),
     ...((form.observations ?? {})[activeParticipantId] ?? {}),
   };
+
+  // Active per-participant individualised goals (GAS sliders).
+  const activeGoalsQ = useQuery<IndividualMicroGoal[]>({
+    queryKey: ["participant-active-goals", activeParticipantId, form.programId],
+    queryFn: () => listParticipantActiveGoals(activeParticipantId, form.programId || undefined),
+    enabled: !!activeParticipantId,
+    staleTime: 30_000,
+  });
+  const activeGoals = activeGoalsQ.data ?? [];
 
   const filteredAvailable = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -389,6 +552,11 @@ export function QuickSessionLogger({
               : userText;
           }
 
+          const goalProgressEntries = Object.entries(obs.goalProgress ?? {}).map(([gid, p]) => ({
+            micro_goal_id: gid,
+            progress: p,
+          }));
+
           return {
             participant_id: pid,
             academic_score: obs.academicScore || undefined,
@@ -396,22 +564,55 @@ export function QuickSessionLogger({
             social_score: obs.socialScore || undefined,
             integration_score: obs.integrationScore || undefined,
             qualitative_note: composedNote || undefined,
+            // Legacy mood field — kept for backward compat with existing reports.
             mood_indicator: obs.mood,
             attendance_status: obs.attendance,
+            // Bespoke session-registration signals.
+            arrival_mood: obs.mood || undefined,
+            departure_mood: obs.departureMood || undefined,
+            verbal_participation:
+              obs.verbalParticipation === null ? undefined : obs.verbalParticipation,
+            goal_progress: goalProgressEntries.length ? goalProgressEntries : undefined,
+            volunteer_progress_sense: obs.progressSense || undefined,
           };
         })
-        .filter((o) => [o.academic_score, o.cognitive_score, o.social_score, o.integration_score].some((v) => v !== undefined));
+        // An observation is kept if it has either: a 1-5 dim score, GAS progress,
+        // verbal participation, an alert flag, or just attendance with a mood.
+        .filter((o) => {
+          const hasDimScore = [
+            o.academic_score, o.cognitive_score, o.social_score, o.integration_score,
+          ].some((v) => v !== undefined);
+          const hasGoalProgress = (o.goal_progress?.length ?? 0) > 0;
+          const hasBespoke =
+            o.verbal_participation !== undefined ||
+            o.departure_mood !== undefined;
+          const hasSense = !!o.volunteer_progress_sense;
+          return hasDimScore || hasGoalProgress || hasBespoke || hasSense;
+        });
 
       if (observations.length === 0)
-        throw new Error("Cal puntuar almenys una dimensió per a un participant.");
+        throw new Error("Cal puntuar almenys una dimensió, un objectiu o una observació qualitativa.");
+
+      const missingSense = selectedParticipants.filter((pid) => {
+        const obs = (form.observations ?? {})[pid] ?? defaultObs();
+        const present = obs.attendance === "present" || obs.attendance === "late";
+        return present && !obs.progressSense;
+      });
+      if (volunteerMode && missingSense.length > 0) {
+        throw new Error(
+          "Indica com creus que ha evolucionat cada alumne present (apartat final del formulari)."
+        );
+      }
 
       return createSession({
         program_id: form.programId,
         session_type: form.sessionType,
         session_date: form.sessionDate,
+        session_time: form.sessionTime,
         duration_minutes: parseInt(form.durationMinutes) || 45,
         notes: form.notes || undefined,
         observations,
+        activity_tag_ids: form.activityTagIds.length ? form.activityTagIds : undefined,
       });
     },
     onSuccess: () => {
@@ -453,10 +654,18 @@ export function QuickSessionLogger({
     return () => window.removeEventListener("keydown", handler);
   }, [selectedParticipants, form.programId]); // eslint-disable-line
 
-  const scoredCount = selectedParticipants.filter((pid) => {
-    const obs = (form.observations ?? {})[pid];
-    return obs && [obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0);
-  }).length;
+  const hasAnySignal = (obs: ObsState | undefined): boolean => {
+    if (!obs) return false;
+    if ([obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0)) return true;
+    if (Object.keys(obs.goalProgress ?? {}).length > 0) return true;
+    if (obs.verbalParticipation !== null) return true;
+    if (obs.departureMood) return true;
+    if (obs.progressSense) return true;
+    return false;
+  };
+
+  const isPresentAttendance = (att: string) => att === "present" || att === "late";
+  const scoredCount = selectedParticipants.filter((pid) => hasAnySignal((form.observations ?? {})[pid])).length;
 
   const completionPct = selectedParticipants.length > 0
     ? Math.round((scoredCount / selectedParticipants.length) * 100)
@@ -553,13 +762,22 @@ export function QuickSessionLogger({
                 </select>
               )}
 
-              <input
-                type="date"
-                className="ql-meta-input ql-meta-date"
-                value={form.sessionDate}
-                onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
-                aria-label="Data de la sessió"
-              />
+              <div className="ql-meta-datetime" role="group" aria-label="Data i hora de la sessió">
+                <input
+                  type="date"
+                  className="ql-meta-input ql-meta-date"
+                  value={form.sessionDate}
+                  onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
+                  aria-label="Data de la sessió"
+                />
+                <SessionTimePicker
+                  compact
+                  id="coord-session-time"
+                  label="Hora"
+                  value={form.sessionTime}
+                  onChange={(t) => setForm((prev) => ({ ...prev, sessionTime: t }))}
+                />
+              </div>
 
               <div className="ql-meta-duration">
                 <input
@@ -590,6 +808,45 @@ export function QuickSessionLogger({
                 ))}
               </div>
             </div>
+
+            {/* ── Activity tags (què s'ha treballat avui) ───────────────── */}
+            {activityTags.length > 0 && (
+              <div className="ql-activity-row" aria-label="Què s'ha treballat">
+                <div className="ql-activity-label">
+                  <Tag size={12} strokeWidth={2} />
+                  Activitats
+                  {form.activityTagIds.length > 0 && (
+                    <span className="ql-activity-count">{form.activityTagIds.length}</span>
+                  )}
+                </div>
+                <div className="ql-activity-chips">
+                  {activityTags.map((tag: SessionActivityTag) => {
+                    const checked = form.activityTagIds.includes(tag.id);
+                    return (
+                      <motion.button
+                        key={tag.id}
+                        type="button"
+                        whileTap={{ scale: 0.94 }}
+                        className={`ql-activity-chip ${checked ? "active" : ""}`}
+                        style={checked && tag.color
+                          ? { borderColor: tag.color, color: tag.color, background: `color-mix(in srgb, ${tag.color} 12%, transparent)` }
+                          : {}}
+                        onClick={() => {
+                          setForm((prev) => {
+                            const ids = prev.activityTagIds ?? [];
+                            const next = checked ? ids.filter((id) => id !== tag.id) : [...ids, tag.id];
+                            return { ...prev, activityTagIds: next };
+                          });
+                        }}
+                      >
+                        {checked && <Check size={11} strokeWidth={3} />}
+                        {tag.label}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {selectedParticipants.length > 0 && (
               <div className="ql-progress-block">
@@ -638,11 +895,18 @@ export function QuickSessionLogger({
           ) : participants.length === 0 ? (
             <div className="ql-pool-state">
               {form.programId
-                ? "Cap participant inscrit. Inscriu-ne des de Programes."
+                ? volunteerMode
+                  ? "Cap alumne teu inscrit en aquest programa. Si en falta algun, demana al coordinador que t'assigni l'alumne i l'inscriu."
+                  : "Cap participant inscrit. Inscriu-ne des de Programes."
                 : "Cap participant. Crea'n des de la pàgina de Participants."}
             </div>
           ) : (
             <div className="ql-pool-grid">
+              {volunteerMode && form.programId && (
+                <p className="ql-pool-hint">
+                  Només alumnes assignats a tu i inscrits en aquest programa ({participants.length}).
+                </p>
+              )}
               {selectedParticipants.length > 0 && (
                 <div className="ql-pool-section-label">Seleccionats</div>
               )}
@@ -651,7 +915,7 @@ export function QuickSessionLogger({
                   const p = participants.find((x: Participant) => x.id === pid);
                   if (!p) return null;
                   const obs = (form.observations ?? {})[pid];
-                  const scored = obs && [obs.academicScore, obs.cognitiveScore, obs.socialScore, obs.integrationScore].some((v) => v > 0);
+                  const scored = hasAnySignal(obs);
                   return (
                     <motion.button
                       key={pid}
@@ -805,16 +1069,16 @@ export function QuickSessionLogger({
                       </div>
                     </div>
 
-                    <div className="ql-section-card ql-section-card--date">
+                    <div className="ql-section-card ql-section-card--datetime">
                       <div className="ql-section-card-head">
                         <div className="ql-section-card-title">
                           <CalendarDays size={16} strokeWidth={2.1} />
-                          Data
+                          Data i hora
                         </div>
                         {isToday && <span className="ql-section-badge">Avui automàtic</span>}
                       </div>
 
-                      <div className="ql-date-card-body">
+                      <div className="ql-datetime-card-body">
                         <input
                           type="date"
                           className="ql-meta-input ql-meta-date ql-meta-date--section"
@@ -822,8 +1086,15 @@ export function QuickSessionLogger({
                           onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
                           aria-label="Data de la sessió"
                         />
+                        <SessionTimePicker
+                          id="volunteer-session-time"
+                          label="Hora"
+                          value={form.sessionTime}
+                          onChange={(t) => setForm((prev) => ({ ...prev, sessionTime: t }))}
+                        />
                         <div className="ql-help-box">
-                          Per defecte es posa la data d'avui. Canvia-la només si registres una sessió d'un altre dia.
+                          Per defecte es posa la data d&apos;avui i l&apos;hora actual (arrodonida).
+                          Canvia-ho només si registres una sessió d&apos;un altre moment.
                         </div>
                       </div>
                     </div>
@@ -856,7 +1127,7 @@ export function QuickSessionLogger({
                                     <div className="ql-block">
                     <div className="ql-block-label">
                       <Sparkles size={12} strokeWidth={2} />
-                      Estat d'ànim
+                      Estat d'ànim — arribada
                     </div>
                     <div className="ql-mood-row">
                       {MOOD_OPTIONS.map((m) => (
@@ -874,6 +1145,66 @@ export function QuickSessionLogger({
                           <span className="ql-mood-label">{m.label}</span>
                         </motion.button>
                       ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Bespoke session-registration signals ───────────────── */}
+                <div className="ql-row ql-row--bespoke">
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      <Sparkles size={12} strokeWidth={2} />
+                      Estat d'ànim — final
+                      <span className="ql-block-hint">opcional</span>
+                    </div>
+                    <div className="ql-mood-row">
+                      {MOOD_OPTIONS.map((m) => (
+                        <motion.button
+                          key={`dep-${m.value}`}
+                          type="button"
+                          whileTap={{ scale: 0.85 }}
+                          className={`ql-mood-btn ql-mood-btn--labeled ${activeObs.departureMood === m.value ? "active" : ""}`}
+                          style={activeObs.departureMood === m.value
+                            ? { borderColor: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)`, color: m.color }
+                            : {}}
+                          onClick={() => setObs(
+                            activeParticipantId,
+                            "departureMood",
+                            activeObs.departureMood === m.value ? "" : m.value,
+                          )}
+                        >
+                          <m.Icon size={16} strokeWidth={2} />
+                          <span className="ql-mood-label">{m.label}</span>
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="ql-block">
+                    <div className="ql-block-label">
+                      <Mic size={12} strokeWidth={2} />
+                      Participació verbal
+                      <span className="ql-block-hint">com s'ha expressat</span>
+                    </div>
+                    <div className="ql-verbal-row">
+                      {VERBAL_PARTICIPATION_OPTIONS.map((opt) => {
+                        const active = activeObs.verbalParticipation === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            className={`ql-verbal-btn ${active ? "active" : ""}`}
+                            onClick={() => setObs(
+                              activeParticipantId,
+                              "verbalParticipation",
+                              active ? null : opt.value,
+                            )}
+                          >
+                            <span className="ql-verbal-num">{opt.short}</span>
+                            <span className="ql-verbal-label">{opt.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -956,17 +1287,22 @@ export function QuickSessionLogger({
                     <span className="ql-block-hint">Etiquetes ràpides</span>
                   </div>
                   <div className="ql-tag-row">
-                    {QUICK_TAGS.map((t) => (
-                      <button
-                        key={t.label}
-                        type="button"
-                        className="ql-tag"
-                        onClick={() => insertTag(t.insert)}
-                      >
-                        <span className="ql-tag-emoji">{t.icon}</span>
-                        {t.label}
-                      </button>
-                    ))}
+                    {QUICK_TAGS.map((t) => {
+                      const TagIcon = t.Icon;
+                      return (
+                        <button
+                          key={t.label}
+                          type="button"
+                          className="ql-tag"
+                          onClick={() => insertTag(t.insert)}
+                        >
+                          <span className="ql-tag-icon" aria-hidden>
+                            <TagIcon size={14} strokeWidth={2.2} />
+                          </span>
+                          {t.label}
+                        </button>
+                      );
+                    })}
                   </div>
                   <textarea
                     className="ql-textarea"
@@ -998,6 +1334,110 @@ export function QuickSessionLogger({
                     </div>
                   )}
                 </div>
+
+                {/* ── Individualised goals: GAS-style progress (-2..+2) ──── */}
+                {activeGoalsQ.isLoading ? null : activeGoals.length > 0 ? (
+                  <div className="ql-block ql-gas-block">
+                    <div className="ql-block-label">
+                      <Target size={12} strokeWidth={2} />
+                      Objectius individuals
+                      <span className="ql-block-hint">
+                        progrés respecte el que esperaves d'aquesta sessió
+                      </span>
+                    </div>
+                    <div className="ql-gas-list">
+                      {activeGoals.map((goal) => {
+                        const value = activeObs.goalProgress?.[goal.id];
+                        return (
+                          <div key={goal.id} className="ql-gas-item">
+                            <div className="ql-gas-head">
+                              <div className="ql-gas-title">{goal.title}</div>
+                              <div className="ql-gas-dim">{goal.dimension}</div>
+                            </div>
+                            <GASControl
+                              value={value}
+                              onChange={(v) => {
+                                const next = { ...(activeObs.goalProgress ?? {}) };
+                                if (next[goal.id] === v) {
+                                  delete next[goal.id];
+                                } else {
+                                  next[goal.id] = v;
+                                }
+                                setObs(activeParticipantId, "goalProgress", next);
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  form.programId && (
+                    <div className="ql-block ql-gas-empty">
+                      <Target size={14} strokeWidth={2} />
+                      <div>
+                        <div className="ql-gas-empty-title">Sense objectius individuals</div>
+                        <div className="ql-gas-empty-sub">
+                          Defineix objectius personalitzats des de la fitxa del participant.
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
+
+                {volunteerMode && isPresentAttendance(activeObs.attendance) && (
+                  <section
+                    className="ql-progress-sense"
+                    aria-labelledby="ql-progress-sense-title"
+                  >
+                    <div className="ql-block-label" id="ql-progress-sense-title">
+                      <TrendingUp size={12} strokeWidth={2} />
+                      Com creus que ha evolucionat respecte l'última sessió?
+                      <span className="ql-block-hint">respecte l&apos;última sessió</span>
+                    </div>
+                    <p className="ql-progress-sense-intro">
+                      La teva percepció aplica un factor suau (×0,8–1,2) sobre l&apos;IPI calculat.
+                      No cal recordar la puntuació anterior.
+                    </p>
+                    <div className="ql-progress-sense-options" role="group" aria-labelledby="ql-progress-sense-title">
+                      {PROGRESS_SENSE_OPTIONS.map(({ value, label, sub, Icon, color }) => {
+                        const active = activeObs.progressSense === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`ql-progress-sense-btn${active ? " is-active" : ""}`}
+                            style={
+                              active
+                                ? {
+                                    borderColor: color,
+                                    background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                                  }
+                                : undefined
+                            }
+                            aria-pressed={active}
+                            onClick={() =>
+                              setObs(
+                                activeParticipantId,
+                                "progressSense",
+                                active ? "" : value
+                              )
+                            }
+                          >
+                            <Icon size={22} strokeWidth={2.2} aria-hidden style={{ color }} />
+                            <span className="ql-progress-sense-label">{label}</span>
+                            <span className="ql-progress-sense-sub">{sub}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!activeObs.progressSense && (
+                      <p className="ql-progress-sense-warn" role="status">
+                        Tria una opció per poder desar aquest alumne.
+                      </p>
+                    )}
+                  </section>
+                )}
 
                 {goals.length > 0 && (
                   <div className="ql-block">

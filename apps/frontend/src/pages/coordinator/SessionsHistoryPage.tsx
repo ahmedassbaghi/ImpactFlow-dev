@@ -107,6 +107,7 @@ function SessionDetailDrawer({
     queryFn: () => getSessionObservations(session.id),
   });
 
+  const timeSuffix = session.session_time ? ` · ${session.session_time}` : "";
   const dateStr = new Date(session.session_date + "T12:00:00").toLocaleDateString("ca-ES", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
@@ -119,7 +120,7 @@ function SessionDetailDrawer({
         <div className="sh-drawer-header">
           <div className="sh-drawer-header-left">
             <TypeChip type={session.session_type} />
-            <span className="sh-drawer-date">{dateStr}</span>
+            <span className="sh-drawer-date">{dateStr}{timeSuffix}</span>
           </div>
           <button className="sh-drawer-close" onClick={onClose}>
             <X size={18} strokeWidth={2} />
@@ -454,6 +455,7 @@ export default function SessionsHistoryPage() {
                           day: "numeric",
                           month: "short",
                         })}
+                        {s.session_time ? ` · ${s.session_time}` : ""}
                       </span>
                       <TypeChip type={s.session_type} />
                     </div>
@@ -543,6 +545,9 @@ export default function SessionsHistoryPage() {
                       {new Date(s.session_date + "T12:00:00").toLocaleDateString("ca-ES", {
                         day: "2-digit", month: "short", year: "numeric",
                       })}
+                      {s.session_time ? (
+                        <span className="sh-td-time"> · {s.session_time}</span>
+                      ) : null}
                     </td>
                     <td className="sh-td-program">{programName(s.program_id)}</td>
                     <td className="sh-td-muted">{formatSessionParticipants(s)}</td>

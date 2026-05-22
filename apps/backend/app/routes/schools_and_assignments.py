@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.algorithms.ipi import DimensionScores, calculate_ipi, calculate_relative_improvement
 from app.algorithms.predictor import predict_next_ipi
 from app.algorithms.risk_engine import calculate_risk_score
-from app.algorithms.sroi_engine import calculate_sroi
+from app.algorithms.sroi_engine import build_ngo_sroi_calculator, build_sroi_extra, calculate_sroi
 from app.config import get_settings
 from app.database import get_db
 from app.models import (
@@ -37,6 +37,7 @@ from app.schemas.api import (
     SchoolUpdate,
     UserAssignmentUpdate,
 )
+from app.services.program_sroi_metrics import load_program_sroi_metrics
 from app.services.session_analytics_service import build_participant_feature_bundle
 from app.utils.deps import get_current_user, require_roles
 from app.utils.participant_code import next_participant_code
@@ -401,74 +402,114 @@ async def create_follow_up_assessment(
 async def compute_sroi_for_program(
     db: AsyncSession,
     program_id: str,
-    cost_eur: float,
-    months: int,
+    cost_eur: float | None = None,
+    months: int | None = None,
 ) -> dict:
-    """Shared SROI calculation used by analytics and public donor endpoint."""
-    enrolled_q = await db.execute(
-        select(func.count(func.distinct(BaselineAssessment.participant_id))).where(
-            BaselineAssessment.program_id == program_id
-        )
+    """SROI unificat amb mètriques reals (sessions, IPI, risc, cost mixt)."""
+    metrics = await load_program_sroi_metrics(db, program_id)
+    investment = cost_eur if cost_eur and cost_eur > 0 else metrics["operating_cost_eur"]
+    duration = months or metrics["program_duration_months"]
+    extra = build_sroi_extra(
+        sessions=metrics["n_sessions"],
+        avg_duration_h=metrics["avg_duration_h"],
+        pct_high_risk=metrics["pct_high_risk"],
+        avg_ipi_gain=metrics["avg_ipi_gain"],
+        pct_integration_gain=metrics.get("pct_integration_gain"),
     )
-    n_enrolled = enrolled_q.scalar_one() or 0
-    if n_enrolled == 0:
-        obs_q = await db.execute(
-            select(func.count(func.distinct(SessionObservation.participant_id)))
-            .join(Session, Session.id == SessionObservation.session_id)
-            .where(Session.program_id == program_id)
-        )
-        n_enrolled = obs_q.scalar_one() or 1
-
-    def _dim_avg(vals):
-        valid = [float(v) for v in vals if v is not None]
-        return (sum(valid) / len(valid) - 1) / 4 * 100 if valid else 0.0
-
-    baseline_q = await db.execute(
-        select(BaselineAssessment).where(BaselineAssessment.program_id == program_id)
-    )
-    baselines = baseline_q.scalars().all()
-    baseline_ipis = []
-    for b in baselines:
-        academic = _dim_avg([b.reading_level, b.math_level, b.comprehension_level])
-        cognitive = _dim_avg([b.attention_level, b.memory_level, b.autonomy_level])
-        social = _dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation])
-        integration = _dim_avg([b.language_fluency, b.cultural_adaptation])
-        baseline_ipis.append(academic * 0.30 + cognitive * 0.20 + social * 0.30 + integration * 0.20)
-
-    latest_q = await db.execute(
-        select(PeriodicAssessment.participant_id, PeriodicAssessment.ipi_score)
-        .where(PeriodicAssessment.program_id == program_id)
-        .order_by(PeriodicAssessment.assessment_date.desc())
-    )
-    seen: set = set()
-    current_ipis = []
-    for row in latest_q.all():
-        if row.participant_id not in seen and row.ipi_score:
-            seen.add(row.participant_id)
-            current_ipis.append(float(row.ipi_score))
-
-    avg_baseline = sum(baseline_ipis) / len(baseline_ipis) if baseline_ipis else 0.0
-    avg_current = sum(current_ipis) / len(current_ipis) if current_ipis else avg_baseline
-    avg_ipi_gain = max(0.0, avg_current - avg_baseline)
-
-    sessions_q = await db.execute(select(func.count(Session.id)).where(Session.program_id == program_id))
-    n_sessions_actual = sessions_q.scalar_one() or 0
-    n_sessions = max(n_sessions_actual, months * 3)
-
+    extra["monthly_fixed_cost_per_participant_eur"] = metrics[
+        "monthly_fixed_cost_per_participant_eur"
+    ]
+    extra["marginal_cost_per_session_eur"] = metrics["marginal_cost_per_session_eur"]
     return calculate_sroi(
-        n_participants=n_enrolled,
-        avg_ipi_gain=avg_ipi_gain,
-        program_cost_eur=cost_eur,
-        program_duration_months=months,
-        extra={"sessions": n_sessions, "avg_duration_h": 1.5},
+        n_participants=metrics["n_participants"],
+        avg_ipi_gain=metrics["avg_ipi_gain"],
+        program_cost_eur=investment,
+        program_duration_months=duration,
+        extra=extra,
+    )
+
+
+async def compute_ngo_sroi_calculator(
+    db: AsyncSession,
+    program_id: str,
+    *,
+    contribution_eur: float = 1000.0,
+    volunteer_hours: float = 1.0,
+) -> dict:
+    """Calculadora ONG: totes les mètriques del programa surten dels registres."""
+    metrics = await load_program_sroi_metrics(db, program_id)
+    return build_ngo_sroi_calculator(
+        n_participants=metrics["n_participants"],
+        avg_ipi_gain=metrics["avg_ipi_gain"],
+        program_duration_months=metrics["program_duration_months"],
+        n_sessions=metrics["n_sessions"],
+        total_volunteer_hours=metrics["total_volunteer_hours"],
+        avg_duration_h=metrics["avg_duration_h"],
+        operating_cost_eur=metrics["operating_cost_eur"],
+        volunteer_reference_value_eur=metrics["volunteer_reference_value_eur"],
+        contribution_eur=contribution_eur,
+        volunteer_hours=volunteer_hours,
+        program_date_from=metrics.get("program_date_from"),
+        program_date_to=metrics.get("program_date_to"),
+        operating_cost_per_session_eur=metrics["marginal_cost_per_session_eur"],
+        monthly_fixed_cost_per_participant_eur=metrics["monthly_fixed_cost_per_participant_eur"],
+        pct_high_risk=metrics["pct_high_risk"],
+        pct_integration_gain=metrics.get("pct_integration_gain"),
+    )
+
+
+@router.get(f"{settings.api_prefix}/analytics/sroi-calculator")
+async def analytics_sroi_calculator(
+    program_id: str,
+    contribution_eur: float = Query(1000.0, ge=0),
+    volunteer_hours: float = Query(1.0, gt=0, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
+):
+    return await compute_ngo_sroi_calculator(
+        db,
+        program_id,
+        contribution_eur=contribution_eur,
+        volunteer_hours=volunteer_hours,
+    )
+
+
+@router.get(f"{settings.api_prefix}/dashboard/donor/{{org_slug}}/sroi-calculator")
+async def donor_sroi_calculator(
+    org_slug: str,
+    contribution_eur: float = Query(1000.0, ge=0),
+    volunteer_hours: float = Query(1.0, gt=0, le=500),
+    program_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    org_q = await db.execute(select(Organization).where(Organization.slug == org_slug))
+    org = org_q.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if program_id:
+        prog_q = await db.execute(select(Program).where(Program.id == program_id))
+    else:
+        prog_q = await db.execute(
+            select(Program)
+            .where(Program.organization_id == org.id, Program.active.is_(True))
+            .limit(1)
+        )
+    prog = prog_q.scalar_one_or_none()
+    if not prog:
+        raise HTTPException(status_code=404, detail="Program not found")
+    return await compute_ngo_sroi_calculator(
+        db,
+        prog.id,
+        contribution_eur=contribution_eur,
+        volunteer_hours=volunteer_hours,
     )
 
 
 @router.get(f"{settings.api_prefix}/dashboard/donor/{{org_slug}}/sroi")
 async def donor_sroi(
     org_slug: str,
-    cost_eur: float = Query(..., gt=0),
-    months: int = Query(9, ge=1, le=36),
+    cost_eur: float | None = Query(default=None, ge=0, description="Override; default = cost des de sessions"),
+    months: int | None = Query(default=None, ge=1, le=36),
     program_id: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):

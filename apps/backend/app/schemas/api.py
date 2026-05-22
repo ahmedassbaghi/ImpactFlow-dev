@@ -13,8 +13,24 @@ class TokenResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    login: str = Field(min_length=3, max_length=255, description="Email o nom d'usuari")
     password: str
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    full_name: str = Field(min_length=2, max_length=120)
+    username: str = Field(min_length=3, max_length=40, pattern=r"^[a-zA-Z0-9._]+$")
+    password: str = Field(min_length=4, max_length=128)
+    organization_slug: str = "narinan"
+
+
+class RegisterResponse(BaseModel):
+    id: str
+    email: EmailStr
+    full_name: str
+    username: str
+    message: str
 
 
 class SchoolCreate(BaseModel):
@@ -142,6 +158,14 @@ class AssessmentInput(BaseModel):
     notes: Optional[str] = None
 
 
+class SessionGoalProgressInput(BaseModel):
+    """GAS-style progress on an individualized micro-goal in this session.
+    Range -2..+2: much worse / worse / expected / better / much better."""
+    micro_goal_id: str
+    progress: int = Field(ge=-2, le=2)
+    note: Optional[str] = None
+
+
 class SessionObservationInput(BaseModel):
     participant_id: str
     academic_score: Optional[int] = Field(default=None, ge=1, le=5)
@@ -151,6 +175,18 @@ class SessionObservationInput(BaseModel):
     qualitative_note: Optional[str] = None
     mood_indicator: Optional[str] = None
     attendance_status: str = "present"
+    # Bespoke behavioural signals — all optional, backward compatible.
+    arrival_mood: Optional[str] = None
+    departure_mood: Optional[str] = None
+    verbal_participation: Optional[int] = Field(default=None, ge=0, le=3)
+    time_on_task_pct: Optional[int] = Field(default=None, ge=0, le=100)
+    flag_alert: bool = False
+    self_eval_emoji: Optional[str] = None
+    volunteer_progress_sense: Optional[str] = Field(
+        default=None,
+        description="Volunteer perception vs last session: progressed | similar | step_back",
+    )
+    goal_progress: list[SessionGoalProgressInput] = []
 
 
 class ParticipantEnrollIn(BaseModel):
@@ -165,22 +201,30 @@ class SessionMicroGoalCompletionInput(BaseModel):
 class SessionCreate(BaseModel):
     program_id: str
     session_date: date
+    session_time: Optional[str] = Field(
+        default=None,
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d$",
+        description="Hora de la sessió en format 24h HH:MM",
+    )
     session_type: str = "group"
     duration_minutes: Optional[int] = None
     notes: Optional[str] = None
     observations: list[SessionObservationInput]
     micro_goal_completions: list[SessionMicroGoalCompletionInput] = []
+    activity_tag_ids: list[str] = []
 
 
 class SessionOut(BaseModel):
     id: str
     program_id: str
     session_date: date
+    session_time: Optional[str] = None
     session_type: str
     duration_minutes: Optional[int]
     notes: Optional[str]
     notes_ai_summary: Optional[str]
     notes_sentiment: Optional[float]
+    activity_tag_ids: list[str] = []
 
     class Config:
         from_attributes = True
@@ -196,6 +240,15 @@ class SessionListOut(SessionOut):
     participants: list[SessionParticipantBrief] = []
 
 
+class SessionGoalProgressOut(BaseModel):
+    micro_goal_id: str
+    progress: int
+    note: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class SessionObservationOut(BaseModel):
     id: str
     participant_id: str
@@ -205,6 +258,64 @@ class SessionObservationOut(BaseModel):
     integration_score: Optional[int]
     qualitative_note: Optional[str]
     mood_indicator: Optional[str]
+    arrival_mood: Optional[str] = None
+    departure_mood: Optional[str] = None
+    verbal_participation: Optional[int] = None
+    time_on_task_pct: Optional[int] = None
+    flag_alert: bool = False
+    self_eval_emoji: Optional[str] = None
+    goal_progress: list[SessionGoalProgressOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class SessionActivityTagOut(BaseModel):
+    id: str
+    slug: str
+    label: str
+    color: Optional[str] = None
+    dimensions: list[str] = []
+    active: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class SessionActivityTagCreate(BaseModel):
+    slug: str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9_]+$")
+    label: str = Field(min_length=1, max_length=120)
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    dimensions: list[str] = []
+
+
+class SessionActivityTagUpdate(BaseModel):
+    label: Optional[str] = None
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    dimensions: Optional[list[str]] = None
+    active: Optional[bool] = None
+
+
+class IndividualMicroGoalCreate(BaseModel):
+    participant_id: str
+    program_id: str
+    title: str = Field(min_length=1, max_length=160)
+    description: Optional[str] = None
+    dimension: str = Field(pattern=r"^(academic|cognitive|social|integration)$")
+    difficulty: int = Field(default=1, ge=1, le=3)
+    target_date: Optional[date] = None
+
+
+class IndividualMicroGoalOut(BaseModel):
+    id: str
+    participant_id: str
+    program_id: str
+    title: str
+    description: Optional[str]
+    dimension: str
+    difficulty: int
+    target_date: Optional[date]
+    active: bool
 
     class Config:
         from_attributes = True
@@ -270,12 +381,19 @@ class UserCreateRequest(BaseModel):
     full_name: str
     role: str
     password: str = Field(min_length=6)
+    username: Optional[str] = None
+
+
+class UserActivateRequest(BaseModel):
+    role: str = Field(pattern="^(coordinator|professional)$")
+    is_active: bool = True
 
 
 class UserOut(BaseModel):
     id: str
     email: EmailStr
     full_name: str
+    username: Optional[str] = None
     role: str
     is_active: bool
 

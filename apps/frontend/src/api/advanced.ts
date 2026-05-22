@@ -52,6 +52,14 @@ export type MonteCarloSROIResult = {
   distribution_bins: { x: number; count: number }[];
   interpretation: string;
   methodology?: string;
+  inputs?: {
+    n_participants: number;
+    n_sessions_central: number;
+    program_duration_months: number;
+    central_cost_eur: number;
+    avg_ipi_gain_mean: number;
+    avg_duration_h: number;
+  };
 };
 
 export type AnomalyAlert = {
@@ -97,14 +105,65 @@ export async function getDoseResponse(
   return data;
 }
 
+export type ProgramSroiSnapshot = {
+  sroi_ratio: number;
+  sroi_statement: string;
+  total_social_value_eur: number;
+  total_investment_eur: number;
+  outcomes_breakdown?: Record<string, number>;
+  formula_explanation?: import("./dashboard").SroiFormulaExplanation;
+  dose_metrics?: {
+    baseline_sessions: number;
+    sessions_registered: number;
+    sessions_effective: number;
+    dose_ratio: number;
+    dose_outcomes_multiplier: number;
+    sessions_per_participant: number;
+  };
+  n_participants: number;
+  avg_ipi_gain: number;
+  program_duration_months: number;
+  sensitivity_analysis?: { conservative: number; central: number; optimistic: number };
+};
+
+/** SROI del període (mateix endpoint que el dashboard del coordinador). */
+export async function getProgramSroi(
+  programId: string,
+  periodStart: string,
+  periodEnd: string,
+): Promise<ProgramSroiSnapshot> {
+  const { data } = await apiClient.get("/analytics/sroi", {
+    params: {
+      program_id: programId,
+      period_start: periodStart,
+      period_end: periodEnd,
+    },
+  });
+  return data as ProgramSroiSnapshot;
+}
+
 export async function getMonteCarloSROI(
   programId: string,
-  costEur: number,
-  months: number = 9,
-  nIter: number = 5000
+  options?: {
+    costEur?: number;
+    months?: number;
+    periodStart?: string;
+    periodEnd?: string;
+    nIter?: number;
+  }
 ): Promise<MonteCarloSROIResult> {
   const { data } = await apiClient.get<MonteCarloSROIResult>("/analytics/sroi-monte-carlo", {
-    params: { program_id: programId, cost_eur: costEur, months, n_iter: nIter },
+    params: {
+      program_id: programId,
+      ...(options?.costEur != null && options.costEur > 0
+        ? { cost_eur: options.costEur }
+        : {}),
+      ...(options?.months != null ? { months: options.months } : {}),
+      ...(options?.periodStart && options?.periodEnd
+        ? { period_start: options.periodStart, period_end: options.periodEnd }
+        : {}),
+      n_iter: options?.nIter ?? 5000,
+    },
   });
   return data;
 }

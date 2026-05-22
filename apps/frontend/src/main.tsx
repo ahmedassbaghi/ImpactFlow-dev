@@ -12,6 +12,11 @@ import "./styles/common-ui.css";
 import "./styles/mobile-shell.css";
 import "./styles/voluntari-ui.css";
 import "./styles/donor-ui.css";
+import "./styles/dimension-evolution.css";
+import "./styles/auth-mobile.css";
+import "./styles/coordinator-ui.css";
+import "./styles/sroi-formula.css";
+import "./styles/data-simulation.css";
 import "./stores/themeStore"; // boot theme from localStorage before render
 
 const queryClient = new QueryClient();

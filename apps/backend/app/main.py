@@ -32,6 +32,7 @@ from app.migrations.migrate_v2 import run_migrations
 from app.models import (
     AttendanceRecord,
     BaselineAssessment,
+    MicroGoal,
     Organization,
     Participant,
     PeriodicAssessment,
@@ -42,15 +43,22 @@ from app.models import (
     Report,
     School,
     Session,
+    SessionActivityTag,
+    SessionActivityTagLink,
+    SessionGoalProgress,
     SessionObservation,
     User,
     UserParticipantAssignment,
 )
+from app.routes.auth import router as auth_router
+from app.routes.data_simulation import router as simulation_router
 from app.routes.schools_and_assignments import router as schools_router
-from app.routes.schools_and_assignments import compute_sroi_for_program
+from app.routes.schools_and_assignments import compute_ngo_sroi_calculator, compute_sroi_for_program
 from app.schemas.api import (
     AssessmentInput,
-    LoginRequest,
+    UserActivateRequest,
+    IndividualMicroGoalCreate,
+    IndividualMicroGoalOut,
     MicroGoalCreate,
     MicroGoalOut,
     ParseNoteRequest,
@@ -65,19 +73,22 @@ from app.schemas.api import (
     ReportListItem,
     ReportRequest,
     ReportStatus,
+    SessionActivityTagCreate,
+    SessionActivityTagOut,
+    SessionActivityTagUpdate,
     SessionCreate,
+    SessionGoalProgressOut,
     SessionObservationOut,
     SessionListOut,
     SessionOut,
     SessionParticipantBrief,
-    TokenResponse,
     UserCreateRequest,
     UserOut,
 )
 from app.services.nlp_service import parse_qualitative_note
 from app.services.report_generator import generate_quarterly_report, get_session_quality_summary
 from app.services.session_analytics_service import build_participant_feature_bundle
-from app.utils.auth import create_token, get_password_hash, verify_password
+from app.utils.auth import get_password_hash
 from app.utils.deps import get_current_user, require_roles
 from app.utils.participant_code import next_participant_code
 from app.utils.access_control import (
@@ -87,7 +98,13 @@ from app.utils.access_control import (
     get_org_participant,
     get_org_program,
 )
-from app.utils.participant_metrics import build_evolution_payload, upsert_periodic_from_observation
+from app.utils.participant_metrics import (
+    build_evolution_payload,
+    get_participant_session_context,
+    latest_periodic_by_participant,
+    resolve_periodic_timeline,
+    upsert_periodic_from_observation,
+)
 from app.utils.participants import participant_to_out, participants_to_out_list
 
 settings = get_settings()
@@ -114,7 +131,9 @@ async def startup() -> None:
     await run_migrations(engine)
 
 
+app.include_router(auth_router)
 app.include_router(schools_router)
+app.include_router(simulation_router)
 
 
 @app.get("/")
@@ -124,23 +143,6 @@ def read_root():
 @app.get("/api/v1/health")
 def health_check():
     return {"status": "healthy"}
-
-
-@app.post(f"{settings.api_prefix}/auth/login", response_model=TokenResponse)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    user_result = await db.execute(select(User).where(User.email == payload.email))
-    user = user_result.scalar_one_or_none()
-    if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-
-    access_token = create_token(user.id, "access", {"role": user.role, "org_id": user.organization_id})
-    refresh_token = create_token(user.id, "refresh")
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        role=user.role,
-        user_id=user.id,
-    )
 
 
 @app.get(f"{settings.api_prefix}/users", response_model=list[UserOut])
@@ -158,14 +160,50 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator")),
 ) -> UserOut:
+    username = (payload.username or payload.email.split("@")[0]).strip().lower()
+    existing = await db.execute(
+        select(User).where(
+            User.organization_id == current_user.organization_id,
+            User.username == username,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nom d'usuari ja en ús")
+
     user = User(
         organization_id=current_user.organization_id,
-        email=payload.email,
+        email=str(payload.email).lower(),
+        username=username,
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name,
         role=payload.role,
+        is_active=True,
     )
     db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@app.patch(f"{settings.api_prefix}/users/{{user_id}}/activate", response_model=UserOut)
+async def activate_user(
+    user_id: str,
+    payload: UserActivateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
+) -> UserOut:
+    result = await db.execute(
+        select(User).where(
+            User.id == user_id,
+            User.organization_id == current_user.organization_id,
+        )
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuari no trobat")
+
+    user.role = payload.role
+    user.is_active = payload.is_active
     await db.commit()
     await db.refresh(user)
     return user
@@ -370,16 +408,28 @@ async def list_sessions(
         seen[sid].add(pid)
         by_session[sid].append(SessionParticipantBrief(id=pid, first_name=fname, code=code))
 
+    # Bulk-load activity tag ids per session.
+    tag_q = await db.execute(
+        select(SessionActivityTagLink.session_id, SessionActivityTagLink.tag_id).where(
+            SessionActivityTagLink.session_id.in_(session_ids)
+        )
+    )
+    tags_by_session: dict[str, list[str]] = {sid: [] for sid in session_ids}
+    for sid, tid in tag_q.all():
+        tags_by_session[sid].append(tid)
+
     return [
         SessionListOut(
             id=s.id,
             program_id=s.program_id,
             session_date=s.session_date,
+            session_time=s.session_time,
             session_type=s.session_type,
             duration_minutes=s.duration_minutes,
             notes=s.notes,
             notes_ai_summary=s.notes_ai_summary,
             notes_sentiment=s.notes_sentiment,
+            activity_tag_ids=tags_by_session.get(s.id, []),
             participants=by_session.get(s.id, []),
         )
         for s in sessions
@@ -704,6 +754,25 @@ async def create_baseline_assessment(
     return {"id": baseline.id, "ipi_baseline": baseline.ipi_baseline, "dimensions": ipi_result["dimensions"]}
 
 
+@app.get(f"{settings.api_prefix}/participants/{{participant_id}}/session-context")
+async def participant_session_context(
+    participant_id: str,
+    program_id: str = Query(...),
+    session_date: date | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """IPI i dimensions de referència per mostrar evolució al registre de sessió."""
+    await ensure_participant_access(db, current_user, participant_id)
+    await get_org_program(db, program_id, current_user.organization_id)
+    return await get_participant_session_context(
+        db,
+        participant_id=participant_id,
+        program_id=program_id,
+        reference_date=session_date or date.today(),
+    )
+
+
 @app.get(f"{settings.api_prefix}/participants/{{participant_id}}/evolution")
 async def participant_evolution(
     participant_id: str,
@@ -820,6 +889,7 @@ async def create_session(
         program_id=payload.program_id,
         professional_id=current_user.id,
         session_date=payload.session_date,
+        session_time=payload.session_time,
         session_type=payload.session_type,
         duration_minutes=payload.duration_minutes,
         notes=payload.notes,
@@ -828,21 +898,66 @@ async def create_session(
     )
     db.add(session)
     await db.flush()
-    for obs in payload.observations:
-        parsed_note = await parse_qualitative_note(obs.qualitative_note or "")
-        db.add(
-            SessionObservation(
-                session_id=session.id,
-                participant_id=obs.participant_id,
-                academic_score=obs.academic_score,
-                cognitive_score=obs.cognitive_score,
-                social_score=obs.social_score,
-                integration_score=obs.integration_score,
-                qualitative_note=obs.qualitative_note,
-                qualitative_note_parsed_tags=json.dumps(parsed_note.get("tags", [])),
-                mood_indicator=obs.mood_indicator,
+
+    # ── Activity tag links (validated against the user's organization) ───────
+    if payload.activity_tag_ids:
+        valid_tags_q = await db.execute(
+            select(SessionActivityTag.id).where(
+                SessionActivityTag.id.in_(payload.activity_tag_ids),
+                SessionActivityTag.organization_id == current_user.organization_id,
             )
         )
+        valid_tag_ids = {row[0] for row in valid_tags_q.all()}
+        for tag_id in payload.activity_tag_ids:
+            if tag_id in valid_tag_ids:
+                db.add(SessionActivityTagLink(session_id=session.id, tag_id=tag_id))
+
+    for obs in payload.observations:
+        parsed_note = await parse_qualitative_note(obs.qualitative_note or "")
+        observation = SessionObservation(
+            session_id=session.id,
+            participant_id=obs.participant_id,
+            academic_score=obs.academic_score,
+            cognitive_score=obs.cognitive_score,
+            social_score=obs.social_score,
+            integration_score=obs.integration_score,
+            qualitative_note=obs.qualitative_note,
+            qualitative_note_parsed_tags=json.dumps(parsed_note.get("tags", [])),
+            mood_indicator=obs.mood_indicator,
+            arrival_mood=obs.arrival_mood,
+            departure_mood=obs.departure_mood,
+            verbal_participation=obs.verbal_participation,
+            time_on_task_pct=obs.time_on_task_pct,
+            flag_alert=obs.flag_alert,
+            self_eval_emoji=obs.self_eval_emoji,
+            volunteer_progress_sense=obs.volunteer_progress_sense,
+        )
+        db.add(observation)
+        await db.flush()  # need observation.id for goal_progress FK
+
+        # Per-goal GAS progress entries (only for goals belonging to this participant + program).
+        if obs.goal_progress:
+            goal_ids = [gp.micro_goal_id for gp in obs.goal_progress]
+            owned_q = await db.execute(
+                select(MicroGoal.id).where(
+                    MicroGoal.id.in_(goal_ids),
+                    MicroGoal.participant_id == obs.participant_id,
+                    MicroGoal.program_id == payload.program_id,
+                )
+            )
+            owned_ids = {row[0] for row in owned_q.all()}
+            for gp in obs.goal_progress:
+                if gp.micro_goal_id not in owned_ids:
+                    continue
+                db.add(
+                    SessionGoalProgress(
+                        session_observation_id=observation.id,
+                        micro_goal_id=gp.micro_goal_id,
+                        progress=gp.progress,
+                        note=gp.note,
+                    )
+                )
+
         db.add(
             AttendanceRecord(
                 participant_id=obs.participant_id,
@@ -879,7 +994,14 @@ async def create_session(
     # ── Auto-enroll + auto PeriodicAssessment from session observations ────────
     for obs in payload.observations:
         scores = [obs.academic_score, obs.cognitive_score, obs.social_score, obs.integration_score]
-        if not any(s is not None for s in scores):
+        has_ipi_signal = (
+            any(s is not None for s in scores)
+            or bool(obs.goal_progress)
+            or obs.volunteer_progress_sense
+            or obs.verbal_participation is not None
+            or obs.time_on_task_pct is not None
+        )
+        if not has_ipi_signal:
             continue
 
         # Auto-enroll participant in program if not already enrolled
@@ -907,7 +1029,24 @@ async def create_session(
 
     await db.commit()
     await db.refresh(session)
-    return session
+    tag_q = await db.execute(
+        select(SessionActivityTagLink.tag_id).where(
+            SessionActivityTagLink.session_id == session.id
+        )
+    )
+    tag_ids = [row[0] for row in tag_q.all()]
+    return SessionOut(
+        id=session.id,
+        program_id=session.program_id,
+        session_date=session.session_date,
+        session_time=session.session_time,
+        session_type=session.session_type,
+        duration_minutes=session.duration_minutes,
+        notes=session.notes,
+        notes_ai_summary=session.notes_ai_summary,
+        notes_sentiment=session.notes_sentiment,
+        activity_tag_ids=tag_ids,
+    )
 
 
 @app.get(f"{settings.api_prefix}/sessions/{{session_id}}", response_model=SessionOut)
@@ -920,7 +1059,21 @@ async def get_session(
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    tag_q = await db.execute(
+        select(SessionActivityTagLink.tag_id).where(SessionActivityTagLink.session_id == session_id)
+    )
+    return SessionOut(
+        id=session.id,
+        program_id=session.program_id,
+        session_date=session.session_date,
+        session_time=session.session_time,
+        session_type=session.session_type,
+        duration_minutes=session.duration_minutes,
+        notes=session.notes,
+        notes_ai_summary=session.notes_ai_summary,
+        notes_sentiment=session.notes_sentiment,
+        activity_tag_ids=[row[0] for row in tag_q.all()],
+    )
 
 
 @app.get(f"{settings.api_prefix}/sessions/{{session_id}}/observations", response_model=list[SessionObservationOut])
@@ -932,7 +1085,42 @@ async def get_session_observations(
     result = await db.execute(
         select(SessionObservation).where(SessionObservation.session_id == session_id)
     )
-    return result.scalars().all()
+    observations = list(result.scalars().all())
+    if not observations:
+        return []
+    obs_ids = [o.id for o in observations]
+    gp_q = await db.execute(
+        select(SessionGoalProgress).where(SessionGoalProgress.session_observation_id.in_(obs_ids))
+    )
+    progress_by_obs: dict[str, list[SessionGoalProgressOut]] = {oid: [] for oid in obs_ids}
+    for gp in gp_q.scalars().all():
+        progress_by_obs[gp.session_observation_id].append(
+            SessionGoalProgressOut(
+                micro_goal_id=gp.micro_goal_id,
+                progress=gp.progress,
+                note=gp.note,
+            )
+        )
+    return [
+        SessionObservationOut(
+            id=o.id,
+            participant_id=o.participant_id,
+            academic_score=o.academic_score,
+            cognitive_score=o.cognitive_score,
+            social_score=o.social_score,
+            integration_score=o.integration_score,
+            qualitative_note=o.qualitative_note,
+            mood_indicator=o.mood_indicator,
+            arrival_mood=o.arrival_mood,
+            departure_mood=o.departure_mood,
+            verbal_participation=o.verbal_participation,
+            time_on_task_pct=o.time_on_task_pct,
+            flag_alert=bool(o.flag_alert),
+            self_eval_emoji=o.self_eval_emoji,
+            goal_progress=progress_by_obs.get(o.id, []),
+        )
+        for o in observations
+    ]
 
 
 @app.patch(f"{settings.api_prefix}/sessions/{{session_id}}/observations")
@@ -1123,82 +1311,217 @@ async def professional_dashboard(
             )
         )
         assigned_ids = [r[0] for r in assign_q.all()]
-        if assigned_ids:
-            part_filters.append(Participant.id.in_(assigned_ids))
+        if not assigned_ids:
+            return {
+                "my_recent_sessions": [],
+                "avg_ipi": 0.0,
+                "trend": [],
+                "by_school": [],
+                "by_program": [],
+                "by_participant": [],
+                "comparison": {
+                    "baseline_avg": None,
+                    "current_avg": None,
+                    "avg_delta": None,
+                    "n_with_baseline": 0,
+                    "n_with_current": 0,
+                    "n_improving": 0,
+                    "n_declining": 0,
+                    "n_stable": 0,
+                },
+                "n_participants": 0,
+            }
+        part_filters.append(Participant.id.in_(assigned_ids))
 
-    participants_q = await db.execute(select(Participant).where(*part_filters))
-    participants = list(participants_q.scalars().all())
+    participants_q = await db.execute(
+        select(Participant, School.abbreviation)
+        .join(School, Participant.school_id == School.id)
+        .where(*part_filters)
+    )
+    participant_rows = participants_q.all()
+    participants = [row[0] for row in participant_rows]
+    school_abbr_by_pid = {row[0].id: row[1] for row in participant_rows}
     pids = [p.id for p in participants]
+
+    if program_id and pids:
+        enrolled_q = await db.execute(
+            select(ProgramEnrollment.participant_id).where(
+                ProgramEnrollment.program_id == program_id,
+                ProgramEnrollment.active == True,
+                ProgramEnrollment.participant_id.in_(pids),
+            )
+        )
+        enrolled_pids = {row[0] for row in enrolled_q.all()}
+        participants = [p for p in participants if p.id in enrolled_pids]
+        participant_rows = [(p, school_abbr_by_pid[p.id]) for p in participants]
+        school_abbr_by_pid = {p.id: abbr for p, abbr in participant_rows}
+        pids = [p.id for p in participants]
 
     avg_ipi = 0.0
     trend: list[dict] = []
     by_school: list[dict] = []
     by_program: list[dict] = []
-
-    if pids:
-        ipi_filters = [PeriodicAssessment.participant_id.in_(pids)]
-        if program_id:
-            ipi_filters.append(PeriodicAssessment.program_id == program_id)
-        ipi_q = await db.execute(
-            select(func.avg(PeriodicAssessment.ipi_score)).where(*ipi_filters)
-        )
-        avg_ipi = round(float(ipi_q.scalar_one() or 0), 1)
+    by_participant: list[dict] = []
+    comparison: dict[str, Any] = {
+        "baseline_avg": None,
+        "current_avg": None,
+        "avg_delta": None,
+        "n_with_baseline": 0,
+        "n_with_current": 0,
+        "n_improving": 0,
+        "n_declining": 0,
+        "n_stable": 0,
+    }
 
     if pids and program_id:
         start_date = date.today() - timedelta(days=180)
-        trend_q = await db.execute(
-            select(PeriodicAssessment.assessment_date, func.avg(PeriodicAssessment.ipi_score))
+
+        bl_q = await db.execute(
+            select(BaselineAssessment.participant_id, BaselineAssessment.ipi_baseline).where(
+                BaselineAssessment.program_id == program_id,
+                BaselineAssessment.participant_id.in_(pids),
+            )
+        )
+        baselines = {
+            row[0]: float(row[1])
+            for row in bl_q.all()
+            if row[1] is not None
+        }
+
+        pa_q = await db.execute(
+            select(PeriodicAssessment)
             .where(
                 PeriodicAssessment.program_id == program_id,
                 PeriodicAssessment.participant_id.in_(pids),
-                PeriodicAssessment.assessment_date >= start_date,
             )
-            .group_by(PeriodicAssessment.assessment_date)
-            .order_by(PeriodicAssessment.assessment_date)
+            .order_by(
+                PeriodicAssessment.participant_id,
+                PeriodicAssessment.assessment_date,
+            )
         )
+        all_periodic = list(pa_q.scalars().all())
+        latest_by_pid = latest_periodic_by_participant(all_periodic)
+
+        canonical_currents = [
+            float(pa.ipi_score) for pa in latest_by_pid.values() if pa.ipi_score is not None
+        ]
+        if canonical_currents:
+            avg_ipi = round(sum(canonical_currents) / len(canonical_currents), 1)
+
+        # Tendència: mitjana del grup amb una fila canònica per alumne i data
+        by_date_scores: dict[date, list[float]] = {}
+        by_pid_rows: dict[str, list[PeriodicAssessment]] = {}
+        for row in all_periodic:
+            by_pid_rows.setdefault(row.participant_id, []).append(row)
+        for pid in pids:
+            series = resolve_periodic_timeline(by_pid_rows.get(pid, []))
+            for pa in series:
+                if pa.assessment_date >= start_date and pa.ipi_score is not None:
+                    by_date_scores.setdefault(pa.assessment_date, []).append(float(pa.ipi_score))
         trend = [
-            {"period": row[0].isoformat(), "avg_ipi": round(float(row[1] or 0), 1)}
-            for row in trend_q.all()
+            {
+                "period": d.isoformat(),
+                "avg_ipi": round(sum(scores) / len(scores), 1),
+            }
+            for d, scores in sorted(by_date_scores.items())
         ]
 
-    school_stmt = (
-        select(School.id, School.name, School.abbreviation, func.avg(PeriodicAssessment.ipi_score))
-        .join(Participant, Participant.school_id == School.id)
-        .where(School.organization_id == current_user.organization_id)
-    )
-    if program_id:
-        school_stmt = school_stmt.outerjoin(
-            PeriodicAssessment,
-            (PeriodicAssessment.participant_id == Participant.id)
-            & (PeriodicAssessment.program_id == program_id),
-        )
-    else:
-        school_stmt = school_stmt.outerjoin(
-            PeriodicAssessment, PeriodicAssessment.participant_id == Participant.id
-        )
-    schools_q = await db.execute(
-        school_stmt.group_by(School.id, School.name, School.abbreviation)
-    )
-    by_school = [
-        {
-            "school_id": row[0],
-            "name": row[1],
-            "abbreviation": row[2],
-            "avg_ipi": round(float(row[3] or 0), 1),
-        }
-        for row in schools_q.all()
-    ]
+        participant_map = {p.id: p for p in participants}
+        deltas: list[float] = []
+        baselines_vals: list[float] = []
+        currents: list[float] = []
 
-    if program_id:
+        for pid in pids:
+            p = participant_map.get(pid)
+            if not p:
+                continue
+            pa = latest_by_pid.get(pid)
+            base = baselines.get(pid)
+            current = float(pa.ipi_score) if pa and pa.ipi_score is not None else None
+            delta = (
+                round(current - base, 1)
+                if current is not None and base is not None
+                else None
+            )
+            if base is not None:
+                baselines_vals.append(base)
+                comparison["n_with_baseline"] += 1
+            if current is not None:
+                currents.append(current)
+                comparison["n_with_current"] += 1
+            if delta is not None:
+                deltas.append(delta)
+                if delta > 2:
+                    comparison["n_improving"] += 1
+                elif delta < -2:
+                    comparison["n_declining"] += 1
+                else:
+                    comparison["n_stable"] += 1
+
+            by_participant.append(
+                {
+                    "participant_id": pid,
+                    "code": p.code,
+                    "first_name": p.first_name,
+                    "school_id": p.school_id,
+                    "school_abbreviation": school_abbr_by_pid.get(pid),
+                    "baseline_ipi": round(base, 1) if base is not None else None,
+                    "current_ipi": round(current, 1) if current is not None else None,
+                    "delta_vs_baseline": delta,
+                }
+            )
+
+        by_participant.sort(
+            key=lambda row: (
+                row["current_ipi"] is None,
+                -(row["delta_vs_baseline"] or -999),
+            )
+        )
+
+        if baselines_vals:
+            comparison["baseline_avg"] = round(sum(baselines_vals) / len(baselines_vals), 1)
+        if currents:
+            comparison["current_avg"] = round(sum(currents) / len(currents), 1)
+        if deltas:
+            comparison["avg_delta"] = round(sum(deltas) / len(deltas), 1)
+
+        school_ipi: dict[str, list[float]] = {}
+        for pid, pa in latest_by_pid.items():
+            p = participant_map.get(pid)
+            if p and pa.ipi_score is not None:
+                school_ipi.setdefault(p.school_id, []).append(float(pa.ipi_score))
+        if school_ipi:
+            schools_q = await db.execute(
+                select(School.id, School.name, School.abbreviation).where(
+                    School.id.in_(list(school_ipi.keys())),
+                    School.organization_id == current_user.organization_id,
+                )
+            )
+            by_school = [
+                {
+                    "school_id": row[0],
+                    "name": row[1],
+                    "abbreviation": row[2],
+                    "avg_ipi": round(sum(school_ipi[row[0]]) / len(school_ipi[row[0]]), 1),
+                }
+                for row in schools_q.all()
+                if school_ipi.get(row[0])
+            ]
+
+    if not program_id and pids:
         programs_q = await db.execute(
             select(Program.id, Program.name, func.avg(PeriodicAssessment.ipi_score))
             .join(PeriodicAssessment, PeriodicAssessment.program_id == Program.id)
-            .where(Program.organization_id == current_user.organization_id)
+            .where(
+                Program.organization_id == current_user.organization_id,
+                PeriodicAssessment.participant_id.in_(pids),
+            )
             .group_by(Program.id, Program.name)
         )
         by_program = [
             {"program_id": row[0], "name": row[1], "avg_ipi": round(float(row[2] or 0), 1)}
             for row in programs_q.all()
+            if row[2] is not None
         ]
 
     recent_sessions = await db.execute(
@@ -1210,6 +1533,8 @@ async def professional_dashboard(
         "trend": trend,
         "by_school": by_school,
         "by_program": by_program,
+        "by_participant": by_participant,
+        "comparison": comparison,
         "n_participants": len(participants),
     }
 
@@ -1383,6 +1708,7 @@ async def donor_dashboard(
         baseline_q = await db.execute(
             select(
                 BaselineAssessment.participant_id,
+                BaselineAssessment.ipi_baseline,
                 BaselineAssessment.reading_level,
                 BaselineAssessment.math_level,
                 BaselineAssessment.comprehension_level,
@@ -1458,8 +1784,27 @@ async def donor_dashboard(
     }
     current_ipi = _avg([float(r.ipi_score) for r in latest_assessments if r.ipi_score])
 
-    avg_ipi_gain = round(current_ipi - _avg(list(baseline_by_dim.values())), 1)
-    avg_ipi_gain_pct = round((avg_ipi_gain / 100) * 100, 1) if avg_ipi_gain > 0 else 0.0
+    baseline_ipi_by_participant = {}
+    for b in baselines:
+        if b.participant_id not in baseline_ipi_by_participant and b.ipi_baseline is not None:
+            baseline_ipi_by_participant[b.participant_id] = float(b.ipi_baseline)
+
+    per_participant_gains = [
+        float(r.ipi_score) - baseline_ipi_by_participant[r.participant_id]
+        for r in latest_assessments
+        if r.ipi_score is not None and r.participant_id in baseline_ipi_by_participant
+    ]
+    avg_ipi_gain = round(
+        sum(per_participant_gains) / len(per_participant_gains), 1
+    ) if per_participant_gains else 0.0
+    avg_baseline_ipi = (
+        sum(baseline_ipi_by_participant.values()) / len(baseline_ipi_by_participant)
+        if baseline_ipi_by_participant
+        else _avg(list(baseline_by_dim.values()))
+    )
+    avg_ipi_gain_pct = (
+        round((avg_ipi_gain / avg_baseline_ipi) * 100, 1) if avg_baseline_ipi > 0 else 0.0
+    )
 
     # Hours of support (total session hours)
     if pid:
@@ -1543,21 +1888,40 @@ async def donor_sroi(
     program_id: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Endpoint SROI específico para portal de donante.
-    Usa la misma lógica que donor_dashboard para obtener inputs.
-    """
-
-    # Reutilizamos donor_dashboard para obtener inputs
-    dash = await donor_dashboard(org_slug, program_id, db)
-    inputs = dash.get("sroi_inputs", {})
-
-    return calculate_sroi(
-        n_participants=inputs.get("n_participants", 0),
-        avg_ipi_gain=inputs.get("avg_ipi_gain", 0.0),
-        program_cost_eur=cost_eur,
-        program_duration_months=months,
+    """Legacy SROI — redirigeix a la calculadora ONG amb cost imputat."""
+    org_q = await db.execute(select(Organization).where(Organization.slug == org_slug))
+    org = org_q.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if program_id:
+        prog_q = await db.execute(select(Program).where(Program.id == program_id))
+    else:
+        prog_q = await db.execute(
+            select(Program)
+            .where(Program.organization_id == org.id, Program.active.is_(True))
+            .limit(1)
+        )
+    prog = prog_q.scalar_one_or_none()
+    if not prog:
+        raise HTTPException(status_code=404, detail="Program not found")
+    calc = await compute_ngo_sroi_calculator(
+        db, prog.id, contribution_eur=cost_eur
     )
+    impact = calc["impact"]
+    prog = calc["program"]
+    return {
+        "total_social_value_eur": impact["outcomes_value_eur"],
+        "total_investment_eur": prog.get("operating_cost_eur", 0),
+        "sroi_ratio": impact["sroi_per_euro_invested"],
+        "sroi_statement": impact["sroi_statement"],
+        "value_breakdown": impact.get("outcomes_breakdown", impact.get("value_breakdown", {})),
+        "sensitivity_analysis": calc.get("sensitivity_analysis", {}),
+        "methodology_reference": calc["methodology_reference"],
+        "n_participants": calc["program"]["n_participants"],
+        "avg_ipi_gain": calc["program"]["avg_ipi_gain"],
+        "program_duration_months": months,
+        "ngo_calculator": calc,
+    }
 
 @app.get(f"{settings.api_prefix}/organization/{{org_slug}}/programs/public")
 async def list_org_programs_public(
@@ -1667,6 +2031,194 @@ async def complete_micro_goal(
     await db.commit()
     await db.refresh(completion)
     return {"id": completion.id, "completed_at": completion.completed_at}
+
+
+# ── Individualised micro-goals (per participant, GAS-friendly) ────────────────
+def _individual_goal_out(goal: MicroGoal) -> IndividualMicroGoalOut:
+    return IndividualMicroGoalOut(
+        id=goal.id,
+        participant_id=goal.participant_id,
+        program_id=goal.program_id,
+        title=goal.title,
+        description=goal.description,
+        dimension=goal.dimension,
+        difficulty=goal.difficulty,
+        target_date=goal.target_date,
+        active=goal.active,
+    )
+
+
+@app.get(
+    f"{settings.api_prefix}/participants/{{participant_id}}/active-goals",
+    response_model=list[IndividualMicroGoalOut],
+)
+async def list_participant_active_goals(
+    participant_id: str,
+    program_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Active per-participant goals — used by the SessionLogger to render GAS sliders."""
+    # Authorize: ensure the participant belongs to the user's org.
+    await ensure_participant_access(db, current_user, participant_id)
+
+    query = (
+        select(MicroGoal)
+        .where(MicroGoal.participant_id == participant_id, MicroGoal.active.is_(True))
+        .order_by(MicroGoal.created_at.desc())
+    )
+    if program_id:
+        query = query.where(MicroGoal.program_id == program_id)
+    result = await db.execute(query)
+    return [_individual_goal_out(g) for g in result.scalars().all()]
+
+
+@app.post(
+    f"{settings.api_prefix}/micro-goals/individual",
+    response_model=IndividualMicroGoalOut,
+)
+async def create_individual_micro_goal(
+    payload: IndividualMicroGoalCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("professional", "coordinator", "admin")),
+):
+    await ensure_participant_access(db, current_user, payload.participant_id)
+    await get_org_program(db, payload.program_id, current_user.organization_id)
+
+    goal = MicroGoal(
+        participant_id=payload.participant_id,
+        program_id=payload.program_id,
+        created_by=current_user.id,
+        title=payload.title,
+        description=payload.description,
+        dimension=payload.dimension,
+        difficulty=payload.difficulty,
+        target_date=payload.target_date,
+    )
+    db.add(goal)
+    await db.commit()
+    await db.refresh(goal)
+    return _individual_goal_out(goal)
+
+
+@app.patch(
+    f"{settings.api_prefix}/micro-goals/individual/{{goal_id}}",
+    response_model=IndividualMicroGoalOut,
+)
+async def update_individual_micro_goal(
+    goal_id: str,
+    payload: dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("professional", "coordinator", "admin")),
+):
+    goal_q = await db.execute(select(MicroGoal).where(MicroGoal.id == goal_id))
+    goal = goal_q.scalar_one_or_none()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    await ensure_participant_access(db, current_user, goal.participant_id)
+
+    for key in ("title", "description", "dimension", "difficulty", "target_date", "active"):
+        if key in payload:
+            setattr(goal, key, payload[key])
+    await db.commit()
+    await db.refresh(goal)
+    return _individual_goal_out(goal)
+
+
+# ── Session activity tags (org-scoped catalog) ───────────────────────────────
+def _tag_out(tag: SessionActivityTag) -> SessionActivityTagOut:
+    dims = [d.strip() for d in (tag.dimensions or "").split(",") if d.strip()]
+    return SessionActivityTagOut(
+        id=tag.id,
+        slug=tag.slug,
+        label=tag.label,
+        color=tag.color,
+        dimensions=dims,
+        active=tag.active,
+    )
+
+
+@app.get(
+    f"{settings.api_prefix}/session-activity-tags",
+    response_model=list[SessionActivityTagOut],
+)
+async def list_session_activity_tags(
+    active_only: bool = True,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = select(SessionActivityTag).where(
+        SessionActivityTag.organization_id == current_user.organization_id
+    )
+    if active_only:
+        query = query.where(SessionActivityTag.active.is_(True))
+    query = query.order_by(SessionActivityTag.label.asc())
+    result = await db.execute(query)
+    return [_tag_out(t) for t in result.scalars().all()]
+
+
+@app.post(
+    f"{settings.api_prefix}/session-activity-tags",
+    response_model=SessionActivityTagOut,
+)
+async def create_session_activity_tag(
+    payload: SessionActivityTagCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("coordinator", "admin")),
+):
+    existing_q = await db.execute(
+        select(SessionActivityTag).where(
+            SessionActivityTag.organization_id == current_user.organization_id,
+            SessionActivityTag.slug == payload.slug,
+        )
+    )
+    if existing_q.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Slug already exists for this organization")
+
+    tag = SessionActivityTag(
+        organization_id=current_user.organization_id,
+        slug=payload.slug,
+        label=payload.label,
+        color=payload.color,
+        dimensions=",".join(payload.dimensions) if payload.dimensions else None,
+    )
+    db.add(tag)
+    await db.commit()
+    await db.refresh(tag)
+    return _tag_out(tag)
+
+
+@app.patch(
+    f"{settings.api_prefix}/session-activity-tags/{{tag_id}}",
+    response_model=SessionActivityTagOut,
+)
+async def update_session_activity_tag(
+    tag_id: str,
+    payload: SessionActivityTagUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("coordinator", "admin")),
+):
+    tag_q = await db.execute(
+        select(SessionActivityTag).where(
+            SessionActivityTag.id == tag_id,
+            SessionActivityTag.organization_id == current_user.organization_id,
+        )
+    )
+    tag = tag_q.scalar_one_or_none()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    if payload.label is not None:
+        tag.label = payload.label
+    if payload.color is not None:
+        tag.color = payload.color
+    if payload.dimensions is not None:
+        tag.dimensions = ",".join(payload.dimensions) if payload.dimensions else None
+    if payload.active is not None:
+        tag.active = payload.active
+    await db.commit()
+    await db.refresh(tag)
+    return _tag_out(tag)
 
 
 @app.post(f"{settings.api_prefix}/reports/generate", response_model=ReportStatus)
@@ -1856,17 +2408,35 @@ async def analytics_cost_effectiveness(
     program_id: str,
     period_start: date,
     period_end: date,
-    total_cost_eur: float = Query(default=0, ge=0),
-    comparator_cost_eur: float = Query(default=0, ge=0),
+    total_cost_eur: float | None = Query(default=None, ge=0),
+    comparator_cost_eur: float | None = Query(default=None, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if period_end < period_start:
         raise HTTPException(status_code=400, detail="period_end must be greater than or equal to period_start")
 
+    from app.services.program_sroi_metrics import (
+        OPERATING_COST_PER_SESSION_EUR,
+        period_operating_cost_eur,
+    )
+
+    n_sessions_period, auto_period_cost, _ = await period_operating_cost_eur(
+        db, program_id, period_start, period_end
+    )
+
     period_days = (period_end - period_start).days + 1
     comparator_end = period_start - timedelta(days=1)
     comparator_start = comparator_end - timedelta(days=max(period_days - 1, 0))
+
+    n_sessions_comparator, auto_comparator_cost, _ = await period_operating_cost_eur(
+        db, program_id, comparator_start, comparator_end
+    )
+
+    use_auto_period = total_cost_eur is None or total_cost_eur <= 0
+    use_auto_comparator = comparator_cost_eur is None or comparator_cost_eur <= 0
+    total_cost_eur = auto_period_cost if use_auto_period else float(total_cost_eur)
+    comparator_cost_eur = auto_comparator_cost if use_auto_comparator else float(comparator_cost_eur)
 
     baseline_rows = await db.execute(
         select(BaselineAssessment.participant_id, BaselineAssessment.ipi_baseline).where(BaselineAssessment.program_id == program_id)
@@ -1921,10 +2491,22 @@ async def analytics_cost_effectiveness(
             "high_risk_share": 0.0,
             "cost_metrics": {
                 "total_cost_eur": total_cost_eur,
+                "comparator_cost_eur": comparator_cost_eur,
                 "cost_per_beneficiary": None,
                 "cost_per_improved_participant": None,
                 "cost_per_ipi_point_gained": None,
                 "icer_vs_previous_period": None,
+            },
+            "period_investment": {
+                "n_sessions": n_sessions_period,
+                "cost_per_session_eur": OPERATING_COST_PER_SESSION_EUR,
+                "total_cost_eur": total_cost_eur,
+                "auto_calculated": use_auto_period,
+            },
+            "comparator_investment": {
+                "n_sessions": n_sessions_comparator,
+                "total_cost_eur": comparator_cost_eur,
+                "auto_calculated": use_auto_comparator,
             },
         }
 
@@ -1989,6 +2571,17 @@ async def analytics_cost_effectiveness(
                 round(cost_per_ipi_point_gained, 2) if cost_per_ipi_point_gained is not None else None
             ),
             "icer_vs_previous_period": round(icer_vs_previous_period, 2) if icer_vs_previous_period is not None else None,
+        },
+        "period_investment": {
+            "n_sessions": n_sessions_period,
+            "cost_per_session_eur": OPERATING_COST_PER_SESSION_EUR,
+            "total_cost_eur": round(total_cost_eur, 2),
+            "auto_calculated": use_auto_period,
+        },
+        "comparator_investment": {
+            "n_sessions": n_sessions_comparator,
+            "total_cost_eur": round(comparator_cost_eur, 2),
+            "auto_calculated": use_auto_comparator,
         },
     }
 
@@ -2276,13 +2869,74 @@ async def analytics_dimension_velocity(
 @app.get(f"{settings.api_prefix}/analytics/sroi")
 async def analytics_sroi(
     program_id: str,
-    cost_eur: float = Query(..., description="Total programme cost in EUR"),
-    months: int = Query(9, description="Programme duration in months"),
+    period_start: date | None = None,
+    period_end: date | None = None,
+    cost_eur: float | None = Query(default=None, ge=0, description="Override cost; default = sessions del període"),
+    months: int | None = Query(default=None, description="Durada en mesos (opcional)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Modulo E — Calcul SROI seguint SROI Network Standard (2012)."""
-    return await compute_sroi_for_program(db, program_id, cost_eur, months)
+    """Modulo E — SROI; cost des de sessions registrades si hi ha període."""
+    from app.algorithms.sroi_engine import build_sroi_extra, calculate_sroi
+    from app.services.program_sroi_metrics import load_program_period_metrics, load_program_sroi_metrics
+
+    if period_start and period_end:
+        if period_end < period_start:
+            raise HTTPException(status_code=400, detail="period_end must be >= period_start")
+        metrics = await load_program_period_metrics(db, program_id, period_start, period_end)
+        investment = cost_eur if cost_eur and cost_eur > 0 else metrics["operating_cost_eur"]
+        duration_months = months or metrics["program_duration_months"]
+        extra = build_sroi_extra(
+            sessions=metrics["n_sessions"],
+            avg_duration_h=metrics["avg_duration_h"],
+            pct_high_risk=metrics["pct_high_risk"],
+            avg_ipi_gain=metrics["avg_ipi_gain"],
+            pct_integration_gain=metrics.get("pct_integration_gain"),
+        )
+        extra["monthly_fixed_cost_per_participant_eur"] = metrics[
+            "monthly_fixed_cost_per_participant_eur"
+        ]
+        extra["marginal_cost_per_session_eur"] = metrics["marginal_cost_per_session_eur"]
+        result = calculate_sroi(
+            n_participants=metrics["n_participants"],
+            avg_ipi_gain=metrics["avg_ipi_gain"],
+            program_cost_eur=investment,
+            program_duration_months=duration_months,
+            extra=extra,
+        )
+        result["period"] = {"start": period_start, "end": period_end}
+        result["period_investment"] = {
+            "n_sessions": metrics["n_sessions"],
+            "marginal_cost_per_session_eur": metrics["marginal_cost_per_session_eur"],
+            "monthly_fixed_cost_per_participant_eur": metrics["monthly_fixed_cost_per_participant_eur"],
+            "cost_per_session_eur": metrics["marginal_cost_per_session_eur"],
+            "total_cost_eur": investment,
+            "auto_calculated": not (cost_eur and cost_eur > 0),
+            "volunteer_reference_value_eur": metrics["volunteer_reference_value_eur"],
+        }
+        return result
+
+    metrics = await load_program_sroi_metrics(db, program_id)
+    investment = cost_eur if cost_eur and cost_eur > 0 else metrics["operating_cost_eur"]
+    duration_months = months or metrics["program_duration_months"]
+    extra = build_sroi_extra(
+        sessions=metrics["n_sessions"],
+        avg_duration_h=metrics["avg_duration_h"],
+        pct_high_risk=metrics["pct_high_risk"],
+        avg_ipi_gain=metrics["avg_ipi_gain"],
+        pct_integration_gain=metrics.get("pct_integration_gain"),
+    )
+    extra["monthly_fixed_cost_per_participant_eur"] = metrics[
+        "monthly_fixed_cost_per_participant_eur"
+    ]
+    extra["marginal_cost_per_session_eur"] = metrics["marginal_cost_per_session_eur"]
+    return calculate_sroi(
+        n_participants=metrics["n_participants"],
+        avg_ipi_gain=metrics["avg_ipi_gain"],
+        program_cost_eur=investment,
+        program_duration_months=duration_months,
+        extra=extra,
+    )
 
 
 @app.get(f"{settings.api_prefix}/analytics/inter-rater-reliability")
@@ -2466,42 +3120,45 @@ async def analytics_dose_response(
 @app.get(f"{settings.api_prefix}/analytics/sroi-monte-carlo")
 async def analytics_sroi_monte_carlo(
     program_id: str,
-    cost_eur: float = Query(..., gt=0),
-    months: int = Query(9, ge=1),
+    cost_eur: float | None = Query(default=None, gt=0),
+    months: int | None = Query(default=None, ge=1),
+    period_start: date | None = None,
+    period_end: date | None = None,
     n_iter: int = Query(5000, ge=500, le=20000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Monte Carlo SROI: 5000 simulations sampling proxy and IPI uncertainty.
-
-    Returns full distribution percentiles + probability of break-even (SROI > 1).
-    """
-    # Reuse the gain calculation from analytics_sroi
-    enrolled_q = await db.execute(
-        select(func.count(func.distinct(ProgramEnrollment.participant_id)))
-        .where(ProgramEnrollment.program_id == program_id, ProgramEnrollment.active == True)
+    """Monte Carlo SROI alineat amb el model actual (dosi, cost mixt, beneficis per sessions)."""
+    from app.services.program_sroi_metrics import (
+        load_program_period_metrics,
+        load_program_sroi_metrics,
     )
-    n_enrolled = enrolled_q.scalar_one() or 0
-    if n_enrolled == 0:
-        obs_q = await db.execute(
-            select(func.count(func.distinct(SessionObservation.participant_id)))
-            .join(Session, Session.id == SessionObservation.session_id)
-            .where(Session.program_id == program_id)
-        )
-        n_enrolled = obs_q.scalar_one() or 1
 
-    # Compute mean and SD of individual IPI gains
-    def _dim_avg(vals):
-        valid = [float(v) for v in vals if v is not None]
-        return (sum(valid) / len(valid) - 1) / 4 * 100 if valid else None
+    if period_start and period_end:
+        if period_end < period_start:
+            raise HTTPException(status_code=400, detail="period_end must be >= period_start")
+        metrics = await load_program_period_metrics(
+            db, program_id, period_start, period_end
+        )
+    else:
+        metrics = await load_program_sroi_metrics(db, program_id)
 
     baseline_q = await db.execute(
-        select(BaselineAssessment).where(BaselineAssessment.program_id == program_id)
+        select(BaselineAssessment.participant_id, BaselineAssessment.ipi_baseline).where(
+            BaselineAssessment.program_id == program_id
+        )
     )
-    baselines = {b.participant_id: b for b in baseline_q.scalars().all()}
+    baseline_by = {
+        row.participant_id: float(row.ipi_baseline)
+        for row in baseline_q.all()
+        if row.ipi_baseline is not None
+    }
 
     latest_q = await db.execute(
-        select(PeriodicAssessment.participant_id, PeriodicAssessment.ipi_score, PeriodicAssessment.assessment_date)
+        select(
+            PeriodicAssessment.participant_id,
+            PeriodicAssessment.ipi_score,
+        )
         .where(PeriodicAssessment.program_id == program_id)
         .order_by(PeriodicAssessment.assessment_date.desc())
     )
@@ -2511,43 +3168,40 @@ async def analytics_sroi_monte_carlo(
         if row.participant_id in seen or row.ipi_score is None:
             continue
         seen.add(row.participant_id)
-        b = baselines.get(row.participant_id)
-        if b is None:
+        bl = baseline_by.get(row.participant_id)
+        if bl is None:
             continue
-        academic = _dim_avg([b.reading_level, b.math_level, b.comprehension_level])
-        cognitive = _dim_avg([b.attention_level, b.memory_level, b.autonomy_level])
-        social = _dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation])
-        integration = _dim_avg([b.language_fluency, b.cultural_adaptation])
-        if any(x is None for x in [academic, cognitive, social, integration]):
-            continue
-        baseline_ipi = academic * 0.30 + cognitive * 0.20 + social * 0.30 + integration * 0.20
-        individual_gains.append(float(row.ipi_score) - baseline_ipi)
+        individual_gains.append(float(row.ipi_score) - bl)
 
+    avg_gain = metrics["avg_ipi_gain"]
     if individual_gains:
         avg_gain = sum(individual_gains) / len(individual_gains)
         if len(individual_gains) > 1:
             from statistics import stdev as _stdev
+
             sd_gain = _stdev(individual_gains)
         else:
-            sd_gain = avg_gain * 0.3 if avg_gain > 0 else 1.0
+            sd_gain = max(avg_gain * 0.3, 1.0)
     else:
-        avg_gain = 0.0
-        sd_gain = 1.0
+        sd_gain = max(avg_gain * 0.3, 1.0) if avg_gain > 0 else 1.0
 
-    sessions_q = await db.execute(
-        select(func.count(Session.id)).where(Session.program_id == program_id)
-    )
-    n_sessions = max(int(sessions_q.scalar_one() or 0), months * 3)
+    duration = months or metrics["program_duration_months"]
+    central_cost = cost_eur if cost_eur and cost_eur > 0 else metrics["operating_cost_eur"]
 
     return monte_carlo_sroi(
-        n_participants=n_enrolled,
+        n_participants=metrics["n_participants"],
         avg_ipi_gain_mean=max(0.0, avg_gain),
         avg_ipi_gain_sd=max(1.0, sd_gain),
-        program_cost_eur=cost_eur,
-        program_duration_months=months,
-        n_sessions=n_sessions,
-        avg_duration_h=1.5,
-        pct_high_risk=0.30,
+        program_duration_months=duration,
+        n_sessions=metrics["n_sessions"],
+        avg_duration_h=metrics["avg_duration_h"],
+        pct_high_risk=metrics["pct_high_risk"],
+        pct_integration_gain=metrics.get("pct_integration_gain"),
+        program_cost_eur=central_cost,
+        monthly_fixed_cost_per_participant_eur=metrics[
+            "monthly_fixed_cost_per_participant_eur"
+        ],
+        marginal_cost_per_session_eur=metrics["marginal_cost_per_session_eur"],
         n_iter=n_iter,
     )
 

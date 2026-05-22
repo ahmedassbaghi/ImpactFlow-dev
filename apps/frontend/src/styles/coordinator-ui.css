@@ -1,0 +1,241 @@
+/* ═══ Coordinador / admin — tema desktop Narinan (#F58220) + Nunito ═════════ */
+
+.app-shell--coordinator {
+  --brand-900: #6e3204;
+  --brand-700: #d96a0a;
+  --brand-500: #f58220;
+  --brand-300: #ffb380;
+  --brand-100: #fff4eb;
+  --narinan: #f58220;
+  --narinan-dark: #c45a08;
+  --coord-accent: #f58220;
+  font-family: "Nunito", system-ui, sans-serif;
+}
+
+.app-shell--coordinator .topnav {
+  height: 58px;
+  background: #ffffff;
+  border-bottom: 1px solid #e8edf2;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.app-shell--coordinator .topnav-brand-icon {
+  background: linear-gradient(135deg, #f58220, #e06810);
+  border-radius: 9px;
+}
+
+.app-shell--coordinator .topnav-brand-name {
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.app-shell--coordinator .topnav-link {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.app-shell--coordinator .topnav-link:hover {
+  color: #0f172a;
+  background: #fff4eb;
+}
+
+.app-shell--coordinator .topnav-link.active {
+  color: var(--narinan-dark);
+  background: #fff4eb;
+  font-weight: 800;
+}
+
+.app-shell--coordinator .topnav-cmd {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.app-shell--coordinator .topnav-cmd-kbd {
+  background: #fff;
+  border-color: #e2e8f0;
+}
+
+.app-shell--coordinator .topnav-icon-btn {
+  color: #64748b;
+}
+
+.app-shell--coordinator .topnav-icon-btn:hover {
+  background: #fff4eb;
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .topnav-avatar {
+  background: #fff4eb;
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .topnav-logout {
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.app-shell--coordinator .topnav-logout:hover {
+  background: #fff4eb;
+  color: var(--narinan-dark);
+  border-color: #fcd9b8;
+}
+
+.app-shell--coordinator .shell-content {
+  background: #f8fafc;
+}
+
+.app-shell--coordinator .btn-primary {
+  background: var(--narinan);
+  border-color: var(--narinan);
+  color: #fff;
+}
+
+.app-shell--coordinator .btn-primary:hover:not(:disabled) {
+  background: var(--narinan-dark);
+  border-color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .btn-secondary {
+  background: #fff4eb;
+  color: var(--narinan-dark);
+  border: 1px solid #fcd9b8;
+}
+
+.app-shell--coordinator .btn-secondary:hover:not(:disabled) {
+  background: #ffe8d4;
+}
+
+.app-shell--coordinator .page-title {
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.app-shell--coordinator .card {
+  border-color: #e8edf2;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+.app-shell--coordinator .form-input:focus,
+.app-shell--coordinator .form-select:focus {
+  border-color: var(--narinan);
+  box-shadow: 0 0 0 3px rgba(245, 130, 32, 0.18);
+}
+
+/* Dashboard */
+.app-shell--coordinator .dash-controls-card {
+  border-left: 4px solid var(--narinan);
+}
+
+.app-shell--coordinator .dash-range-block {
+  background: linear-gradient(120deg, #ffffff, #fff8f2);
+  border-color: #fcd9b8;
+}
+
+.app-shell--coordinator .dash-range-track-active {
+  background: linear-gradient(90deg, #ffb380, var(--narinan));
+}
+
+.app-shell--coordinator .kpi-card--accent {
+  border-top-color: var(--narinan);
+}
+
+.app-shell--coordinator .kpi-icon {
+  color: var(--narinan);
+}
+
+.app-shell--coordinator .dash-cost-auto {
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: #fff8f2;
+  border: 1px solid #fcd9b8;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.app-shell--coordinator .dash-cost-auto strong {
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .dash-sroi-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.app-shell--coordinator .dash-sroi-ratio {
+  font-size: 2.25rem;
+  font-weight: 900;
+  color: var(--narinan-dark);
+  line-height: 1;
+}
+
+.app-shell--coordinator .dash-sroi-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  max-width: 420px;
+  line-height: 1.45;
+}
+
+.app-shell--coordinator .sroi-formula {
+  border-top-color: #fcd9b8;
+}
+
+.app-shell--coordinator .sroi-formula-box-value--ratio {
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .dash-cea-toggle {
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .dash-cea-toggle:hover {
+  background: #fff4eb;
+}
+
+.app-shell--coordinator .program-card:hover {
+  border-color: #fcd9b8;
+}
+
+.app-shell--coordinator .modal-header h2 {
+  color: #0f172a;
+}
+
+.app-shell--coordinator .dash-controls-grid--compact {
+  grid-template-columns: 1fr 1.4fr;
+  gap: 1.25rem;
+}
+
+.app-shell--coordinator .dash-controls-period {
+  grid-column: span 1;
+}
+
+@media (max-width: 900px) {
+  .app-shell--coordinator .dash-controls-grid--compact {
+    grid-template-columns: 1fr;
+  }
+}
+
+.app-shell--coordinator a:not(.topnav-link):not(.btn-primary):not(.btn-secondary) {
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .page-subtitle,
+.app-shell--coordinator .muted {
+  color: #64748b;
+}
+
+.app-shell--coordinator .dash-section-label {
+  color: var(--narinan-dark);
+}
+
+.app-shell--coordinator .insight-box {
+  border-left-color: var(--narinan);
+  background: #fff8f2;
+}
+
+.app-shell--coordinator table th {
+  color: var(--narinan-dark);
+}

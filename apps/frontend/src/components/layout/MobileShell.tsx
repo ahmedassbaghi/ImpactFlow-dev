@@ -20,7 +20,7 @@ const VOLUNTEER_LINKS = [
   { to: "/coordinator/sessions", label: "Historial", icon: History },
   { to: "/coordinator/participants", label: "Alumnes", icon: Users },
   { to: "/voluntari/progress", label: "Progrés", icon: TrendingUp },
-  { to: "/voluntari/seguiment", label: "Seguiment", icon: UserCheck },
+  { to: "/voluntari/seguiment", label: "Avaluació", icon: UserCheck },
 ];
 
 const DONOR_LINKS = [

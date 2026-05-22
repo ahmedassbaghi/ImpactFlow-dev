@@ -25,6 +25,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Star,
+  Target,
+  Plus,
+  X as XIcon,
 } from "lucide-react";
 import {
   getParticipant,
@@ -38,12 +41,25 @@ import {
   unenrollParticipant,
   createBaseline,
 } from "../../api/participants";
+import {
+  listParticipantActiveGoals,
+  createIndividualMicroGoal,
+  updateIndividualMicroGoal,
+  type IndividualMicroGoal,
+} from "../../api/microGoals";
 import { listPrograms } from "../../api/programs";
 import { toast } from "../../stores/toastStore";
 import { VolunteerPageHeader, VOL_HOME } from "../../components/voluntari/VolunteerPageHeader";
 
-const TABS = ["Baseline", "Evolució", "Predicció", "Anàlisi", "Alertes"] as const;
+const TABS = ["Baseline", "Evolució", "Objectius", "Predicció", "Anàlisi", "Alertes"] as const;
 type Tab = (typeof TABS)[number];
+
+const GOAL_DIMENSIONS = [
+  { value: "academic" as const,    label: "Acadèmic",   color: "var(--dim-academic)" },
+  { value: "cognitive" as const,   label: "Cognitiu",   color: "var(--dim-cognitive)" },
+  { value: "social" as const,      label: "Social",     color: "var(--dim-social)" },
+  { value: "integration" as const, label: "Integració", color: "var(--dim-integration)" },
+];
 
 const RISK_COLOR: Record<string, string> = {
   low: "var(--risk-low)",
@@ -409,17 +425,14 @@ export default function ParticipantProfile() {
   const hasBaseline = evolution?.baseline_ipi != null;
 
   const visibleTabs = useMemo(
-    () => (isVolunteer ? (["Evolució"] as const) : TABS),
+    () => (isVolunteer ? (["Evolució", "Objectius"] as const) : TABS),
     [isVolunteer]
   );
 
   const [activeTab, setActiveTab] = useState<Tab>(isVolunteer ? "Evolució" : "Baseline");
 
   useEffect(() => {
-    if (isVolunteer) {
-      setActiveTab("Evolució");
-      return;
-    }
+    if (isVolunteer) return; // volunteers use their own tab toggle, don't auto-switch
     if (hasBaseline) setActiveTab("Evolució");
     else if (!evolutionQ.isLoading && evolutionQ.isSuccess) setActiveTab("Baseline");
   }, [isVolunteer, hasBaseline, evolutionQ.isLoading, evolutionQ.isSuccess]);
@@ -451,6 +464,62 @@ export default function ParticipantProfile() {
   const allProgramsQ = useQuery({
     queryKey: ["programs"],
     queryFn: () => listPrograms(true),
+  });
+
+  // ── Individual goals ─────────────────────────────────────────────────
+  const activeGoalsQ = useQuery<IndividualMicroGoal[]>({
+    queryKey: ["participant-active-goals", participantId],
+    queryFn: () => listParticipantActiveGoals(participantId!),
+    enabled: !!participantId,
+    staleTime: 30_000,
+  });
+  const activeGoals = activeGoalsQ.data ?? [];
+
+  const [goalFormOpen, setGoalFormOpen] = useState(false);
+  const [goalForm, setGoalForm] = useState({
+    title: "",
+    dimension: "academic" as "academic" | "cognitive" | "social" | "integration",
+    difficulty: 2 as 1 | 2 | 3,
+    target_date: "",
+    description: "",
+    program_id: "",
+  });
+
+  // When enrolled programs load, prefill the program selector in the goal form
+  useEffect(() => {
+    if (effectiveProgramId && !goalForm.program_id) {
+      setGoalForm((prev) => ({ ...prev, program_id: effectiveProgramId }));
+    }
+  }, [effectiveProgramId]); // eslint-disable-line
+
+  const createGoalMutation = useMutation({
+    mutationFn: () =>
+      createIndividualMicroGoal({
+        participant_id: participantId!,
+        program_id: goalForm.program_id || effectiveProgramId,
+        title: goalForm.title.trim(),
+        description: goalForm.description.trim() || undefined,
+        dimension: goalForm.dimension,
+        difficulty: goalForm.difficulty,
+        target_date: goalForm.target_date || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["participant-active-goals", participantId] });
+      qc.invalidateQueries({ queryKey: ["participant-active-goals"] });
+      setGoalFormOpen(false);
+      setGoalForm({ title: "", dimension: "academic", difficulty: 2, target_date: "", description: "", program_id: effectiveProgramId });
+      toast.success("Objectiu creat", "L'objectiu individual s'ha afegit correctament.");
+    },
+    onError: () => toast.error("No s'ha pogut crear l'objectiu", "Comprova que tots els camps siguin correctes."),
+  });
+
+  const deactivateGoalMutation = useMutation({
+    mutationFn: (goalId: string) => updateIndividualMicroGoal(goalId, { active: false }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["participant-active-goals", participantId] });
+      toast.success("Objectiu desactivat");
+    },
+    onError: () => toast.error("No s'ha pogut desactivar l'objectiu"),
   });
 
   const enrolledPrograms = enrolledProgramsQ.data ?? [];
@@ -492,11 +561,16 @@ export default function ParticipantProfile() {
   const historyPoints = evolution?.history ?? evolution?.timeline ?? [];
   const chartData: { label: string; ipi: number | null; predicted?: number }[] = [];
   for (const point of historyPoints) {
-    const label =
-      point.period_label ||
-      (typeof point.date === "string"
-        ? point.date.slice(0, 10)
-        : String(point.date));
+    // Always use the actual assessment date as the X-axis label so the chart
+    // is chronologically correct regardless of what period_label says
+    // (avoids "Sim 31 → Sim 11 → Sim 43 …" jumps caused by label re-numbering).
+    const rawDate = typeof point.date === "string" ? point.date.slice(0, 10) : String(point.date ?? "");
+    let label = point.period_label ?? rawDate;
+    if (rawDate) {
+      // Parse as local date (not UTC) to avoid off-by-one in negative-offset TZs
+      const [y, mo, d] = rawDate.split("-").map(Number);
+      label = new Date(y, mo - 1, d).toLocaleDateString("ca-ES", { day: "numeric", month: "short" });
+    }
     chartData.push({ label, ipi: point.ipi_score });
   }
   const predictedIpi = pred?.predicted_ipi ?? evolution?.prediction?.predicted_ipi;
@@ -767,13 +841,13 @@ export default function ParticipantProfile() {
       </div>
       )}
 
-      {!isVolunteer && (
       <div
         style={{
           display: "flex",
           gap: "0.25rem",
           borderBottom: "1px solid var(--border)",
           paddingBottom: 0,
+          overflowX: "auto",
         }}
       >
         {visibleTabs.map((tab) => (
@@ -791,13 +865,14 @@ export default function ParticipantProfile() {
               borderBottom: activeTab === tab ? "2px solid var(--brand-500)" : "2px solid transparent",
               marginBottom: -1,
               borderRadius: "4px 4px 0 0",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             {tab}
           </button>
         ))}
       </div>
-      )}
 
       {evolutionQ.isError && (
         <p className={isVolunteer ? "vol-empty" : undefined} role="alert" style={isVolunteer ? undefined : { color: "var(--risk-medium)" }}>
@@ -805,7 +880,7 @@ export default function ParticipantProfile() {
         </p>
       )}
 
-      {activeTab === "Baseline" && !isVolunteer && (
+      {activeTab === "Baseline" && (
         <div>
           {!hasBaseline ? (
             <BaselineForm participantId={participantId} />
@@ -815,7 +890,7 @@ export default function ParticipantProfile() {
         </div>
       )}
 
-      {(activeTab === "Evolució" || isVolunteer) && (
+      {activeTab === "Evolució" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <div
             style={{
@@ -836,11 +911,19 @@ export default function ParticipantProfile() {
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10 }}
+                    interval="preserveStartEnd"
+                    angle={chartData.length > 12 ? -35 : 0}
+                    textAnchor={chartData.length > 12 ? "end" : "middle"}
+                    height={chartData.length > 12 ? 48 : 20}
+                  />
                   <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
                   <Tooltip
+                    contentStyle={{ borderRadius: 10, border: "1px solid var(--border)", fontSize: "0.85rem" }}
                     formatter={(value: number, name: string) => [
-                      `${value.toFixed(1)}`,
+                      `${Number(value).toFixed(1)} pts`,
                       name === "ipi" ? "IPI Real" : "Predicció",
                     ]}
                   />
@@ -878,7 +961,7 @@ export default function ParticipantProfile() {
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" }}>
             <div
               style={{
                 background: "var(--surface-0)",
@@ -949,6 +1032,255 @@ export default function ParticipantProfile() {
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === "Objectius" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* ── Goals header ── */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
+                <Target size={16} strokeWidth={2.2} style={{ color: "var(--brand-500)" }} />
+                Objectius individuals
+              </h3>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                Objectius personalitzats per fer seguiment GAS sessió a sessió
+              </p>
+            </div>
+            {!goalFormOpen && (
+              <button
+                type="button"
+                onClick={() => setGoalFormOpen(true)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "0.45rem 1rem", borderRadius: 8, border: "none",
+                  background: "var(--brand-500)", color: "white",
+                  fontSize: "0.85rem", fontWeight: 700, cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                Nou objectiu
+              </button>
+            )}
+          </div>
+
+          {/* ── Create goal form ── */}
+          {goalFormOpen && (
+            <div style={{
+              background: "var(--surface-0)", border: "1px solid var(--brand-300)",
+              borderRadius: 14, padding: "1.25rem",
+              display: "flex", flexDirection: "column", gap: "0.85rem",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <h4 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 700 }}>Nou objectiu individual</h4>
+                <button
+                  type="button"
+                  onClick={() => setGoalFormOpen(false)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "0.25rem" }}
+                  aria-label="Tancar"
+                >
+                  <XIcon size={18} strokeWidth={2} />
+                </button>
+              </div>
+
+              {/* Program selector (if not auto-resolved) */}
+              {!effectiveProgramId && (
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>
+                    Programa *
+                  </label>
+                  <select
+                    className="form-select"
+                    value={goalForm.program_id}
+                    onChange={(e) => setGoalForm((p) => ({ ...p, program_id: e.target.value }))}
+                  >
+                    <option value="">Selecciona programa…</option>
+                    {enrolledPrograms.map((prog) => (
+                      <option key={prog.id} value={prog.id}>{prog.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Title */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Títol de l'objectiu *
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Ex.: Acabar els deures sense recordatoris"
+                  value={goalForm.title}
+                  onChange={(e) => setGoalForm((p) => ({ ...p, title: e.target.value }))}
+                  autoFocus
+                />
+              </div>
+
+              {/* Dimension + Difficulty in one row */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>
+                    Dimensió *
+                  </label>
+                  <select
+                    className="form-select"
+                    value={goalForm.dimension}
+                    onChange={(e) => setGoalForm((p) => ({ ...p, dimension: e.target.value as typeof goalForm.dimension }))}
+                  >
+                    {GOAL_DIMENSIONS.map((d) => (
+                      <option key={d.value} value={d.value}>{d.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>
+                    Dificultat
+                  </label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {([1, 2, 3] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setGoalForm((p) => ({ ...p, difficulty: d }))}
+                        style={{
+                          flex: 1, padding: "0.45rem 0", border: "1.5px solid",
+                          borderColor: goalForm.difficulty === d ? "var(--brand-500)" : "var(--border)",
+                          borderRadius: 8, background: goalForm.difficulty === d ? "var(--brand-100)" : "none",
+                          color: goalForm.difficulty === d ? "var(--brand-700)" : "var(--text-secondary)",
+                          fontWeight: 700, fontSize: "0.82rem", cursor: "pointer",
+                        }}
+                      >
+                        {"★".repeat(d)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Target date (optional) */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Data objectiu <span style={{ fontWeight: 400 }}>(opcional)</span>
+                </label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={goalForm.target_date}
+                  onChange={(e) => setGoalForm((p) => ({ ...p, target_date: e.target.value }))}
+                />
+              </div>
+
+              {/* Description (optional) */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-secondary)", marginBottom: 4 }}>
+                  Descripció / context <span style={{ fontWeight: 400 }}>(opcional)</span>
+                </label>
+                <textarea
+                  className="form-textarea"
+                  rows={2}
+                  placeholder="Per exemple: es distreu molt en sessions grupals…"
+                  value={goalForm.description}
+                  onChange={(e) => setGoalForm((p) => ({ ...p, description: e.target.value }))}
+                />
+              </div>
+
+              {createGoalMutation.isError && (
+                <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--risk-high)" }}>
+                  No s'ha pogut crear l'objectiu. Comprova que tots els camps obligatoris estiguin omplerts.
+                </p>
+              )}
+
+              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setGoalFormOpen(false)}
+                >
+                  Cancel·lar
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={
+                    !goalForm.title.trim() ||
+                    (!goalForm.program_id && !effectiveProgramId) ||
+                    createGoalMutation.isPending
+                  }
+                  onClick={() => createGoalMutation.mutate()}
+                >
+                  {createGoalMutation.isPending ? "Creant…" : "Crear objectiu"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Goals list ── */}
+          {activeGoalsQ.isLoading ? (
+            <p style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>Carregant objectius…</p>
+          ) : activeGoals.length === 0 ? (
+            <div style={{
+              padding: "2rem 1.5rem", borderRadius: 14,
+              background: "var(--surface-1)", border: "1px dashed var(--border)",
+              textAlign: "center",
+            }}>
+              <Target size={32} strokeWidth={1.5} style={{ color: "var(--text-muted)", marginBottom: "0.75rem" }} />
+              <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.9rem", color: "var(--text-primary)" }}>
+                Sense objectius individuals actius
+              </p>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                Defineix objectius personalitzats per a {displayName} i registra'n el progrés en cada sessió (escala GAS −2…+2).
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {activeGoals.map((goal) => {
+                const dim = GOAL_DIMENSIONS.find((d) => d.value === goal.dimension);
+                return (
+                  <div
+                    key={goal.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.875rem",
+                      padding: "0.85rem 1rem", borderRadius: 10,
+                      background: "var(--surface-0)", border: "1px solid var(--border)",
+                    }}
+                  >
+                    <span style={{
+                      width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+                      background: dim?.color ?? "var(--brand-500)",
+                    }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-primary)" }}>
+                        {goal.title}
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginTop: 2, display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span style={{ color: dim?.color, fontWeight: 600 }}>{dim?.label ?? goal.dimension}</span>
+                        <span>{"★".repeat(goal.difficulty)}{"☆".repeat(3 - goal.difficulty)}</span>
+                        {goal.target_date && <span>Fins {goal.target_date}</span>}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => deactivateGoalMutation.mutate(goal.id)}
+                      disabled={deactivateGoalMutation.isPending}
+                      style={{
+                        fontSize: "0.78rem", color: "var(--text-muted)",
+                        padding: "0.3rem 0.7rem", borderRadius: 6,
+                        border: "1px solid var(--border)", background: "none",
+                        cursor: "pointer", flexShrink: 0,
+                        transition: "color 0.15s, border-color 0.15s",
+                      }}
+                      title="Marcar com a completat / desactivar"
+                    >
+                      Completat
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

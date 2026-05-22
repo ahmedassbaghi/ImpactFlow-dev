@@ -51,6 +51,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)
@@ -58,6 +59,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     organization: Mapped[Organization] = relationship()
+
+    __table_args__ = (UniqueConstraint("organization_id", "username"),)
 
 
 class Program(Base):
@@ -179,6 +182,7 @@ class Session(Base):
     program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
     professional_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     session_date: Mapped[date] = mapped_column(Date, nullable=False)
+    session_time: Mapped[Optional[str]] = mapped_column(String)  # HH:MM (24h)
     session_type: Mapped[str] = mapped_column(String, default="group")
     duration_minutes: Mapped[Optional[int]] = mapped_column(Integer)
     notes: Mapped[Optional[str]] = mapped_column(Text)
@@ -200,9 +204,71 @@ class SessionObservation(Base):
     qualitative_note: Mapped[Optional[str]] = mapped_column(Text)
     qualitative_note_parsed_tags: Mapped[Optional[str]] = mapped_column(Text)
     mood_indicator: Mapped[Optional[str]] = mapped_column(String)
+    # Extended behavioural signals (bespoke session-registration model).
+    arrival_mood: Mapped[Optional[str]] = mapped_column(String)
+    departure_mood: Mapped[Optional[str]] = mapped_column(String)
+    verbal_participation: Mapped[Optional[int]] = mapped_column(Integer)  # 0..3
+    time_on_task_pct: Mapped[Optional[int]] = mapped_column(Integer)      # 0..100
+    flag_alert: Mapped[bool] = mapped_column(Boolean, default=False)
+    self_eval_emoji: Mapped[Optional[str]] = mapped_column(String)
+    # Volunteer gut-feel vs last session: progressed | similar | step_back
+    volunteer_progress_sense: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("session_id", "participant_id"),)
+
+
+class SessionActivityTag(Base):
+    """Org-scoped catalog of activity labels (what was worked on in a session)."""
+    __tablename__ = "session_activity_tags"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    slug: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String)
+    # Comma-separated list of dimensions this activity primarily touches:
+    # any subset of {"academic","cognitive","social","integration"}.
+    dimensions: Mapped[Optional[str]] = mapped_column(String)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("organization_id", "slug"),)
+
+
+class SessionActivityTagLink(Base):
+    """M2M Session ↔ Activity tag."""
+    __tablename__ = "session_activity_tag_links"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    tag_id: Mapped[str] = mapped_column(
+        ForeignKey("session_activity_tags.id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("session_id", "tag_id"),)
+
+
+class SessionGoalProgress(Base):
+    """Per-observation progress on an individualized micro-goal (GAS scale -2..+2)."""
+    __tablename__ = "session_goal_progress"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_observation_id: Mapped[str] = mapped_column(
+        ForeignKey("session_observations.id", ondelete="CASCADE"), nullable=False
+    )
+    micro_goal_id: Mapped[str] = mapped_column(
+        ForeignKey("micro_goals.id", ondelete="CASCADE"), nullable=False
+    )
+    progress: Mapped[int] = mapped_column(Integer, nullable=False)  # -2..+2
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("session_observation_id", "micro_goal_id"),)
 
 
 class AttendanceRecord(Base):

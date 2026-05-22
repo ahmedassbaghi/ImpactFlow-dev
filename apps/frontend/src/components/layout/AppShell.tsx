@@ -5,6 +5,7 @@ import {
   Building2,
   Command,
   FileText,
+  FlaskConical,
   FolderKanban,
   Heart,
   History,
@@ -27,8 +28,8 @@ import { PageTransition } from "../common/PageTransition";
 import { avatarStyle, avatarInitial } from "../../utils/hueAvatar";
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
-  admin:        { label: "Admin",        color: "#7c3aed", bg: "#ede9fe" },
-  coordinator:  { label: "Coordinadora", color: "#2563eb", bg: "#dbeafe" },
+  admin:        { label: "Admin",        color: "#c45a08", bg: "#fff4eb" },
+  coordinator:  { label: "Coordinadora", color: "#c45a08", bg: "#fff4eb" },
   professional: { label: "Voluntari/a", color: "#059669", bg: "#d1fae5" },
   donor:        { label: "Donant",       color: "#d97706", bg: "#fef3c7" },
   viewer:       { label: "Visitant",     color: "#64748b", bg: "#f1f5f9" },
@@ -47,6 +48,7 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
     { to: "/coordinator/schools",            label: "Escoles",             icon: Building2 },
     { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
     { to: "/coordinator/sessions",          label: "Historial",           icon: History },
+    { to: "/coordinator/simulation",        label: "Simulació",           icon: FlaskConical },
     { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
     { to: "/professional/session-logger",    label: "Registre",            icon: Zap },
     { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
@@ -61,6 +63,7 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
     { to: "/coordinator/schools",            label: "Escoles",             icon: Building2 },
     { to: "/coordinator/programs",           label: "Programes",           icon: FolderKanban },
     { to: "/coordinator/sessions",          label: "Historial",           icon: History },
+    { to: "/coordinator/simulation",        label: "Simulació",           icon: FlaskConical },
     { to: "/coordinator/micro-goals",        label: "Micro-objectius",     icon: Target },
     { to: "/professional/session-logger",    label: "Registre",            icon: Zap },
     { to: "/coordinator/advanced",           label: "Anàlisi avançada",   icon: Atom },
@@ -92,9 +95,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const links    = NAV_LINKS[role]  ?? NAV_LINKS.viewer;
   const roleMeta = ROLE_META[role]  ?? ROLE_META.viewer;
   const avatarKey = userId ?? role;
+  const isCoordinatorShell = role === "coordinator" || role === "admin";
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isCoordinatorShell ? " app-shell--coordinator" : ""}`}>
       {/* ── Top navigation ── */}
       <header className="topnav">
         {/* Brand */}

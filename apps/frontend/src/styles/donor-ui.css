@@ -936,3 +936,273 @@
   width: 100%;
   height: 200px;
 }
+
+/* Calculadores SROI ONG */
+.donor-ui .ngo-sroi {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.donor-ui .ngo-sroi-trust-line {
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--donor-muted);
+  text-align: center;
+}
+
+.donor-ui .ngo-sroi-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  padding: 1rem;
+  background: var(--donor-surface);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.donor-ui .ngo-sroi-flow-step {
+  text-align: center;
+  min-width: 120px;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+}
+
+.donor-ui .ngo-sroi-flow-step--input {
+  background: #fef3c7;
+}
+
+.donor-ui .ngo-sroi-flow-step--output {
+  background: #dcfce7;
+}
+
+.donor-ui .ngo-sroi-flow-step--volunteer {
+  background: #fef3c7;
+}
+
+.donor-ui .ngo-sroi-flow-step--ratio {
+  background: #dbeafe;
+}
+
+.donor-ui .ngo-sroi-flow-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--donor-muted);
+}
+
+.donor-ui .ngo-sroi-flow-value {
+  margin: 0.25rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--donor-text);
+}
+
+.donor-ui .ngo-sroi-flow-caption {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: var(--donor-muted);
+}
+
+.donor-ui .ngo-sroi-flow-arrow {
+  color: var(--donor-muted);
+  flex-shrink: 0;
+}
+
+.donor-ui .sroi-outcome-desc {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 0.75rem;
+  color: var(--donor-muted);
+  line-height: 1.35;
+}
+
+.donor-ui .ngo-sroi-share {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  color: var(--narinan-dark);
+}
+
+.donor-ui .ngo-sroi-program-card {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 16px;
+  padding: 1.25rem 1.35rem;
+}
+
+.donor-ui .ngo-sroi-card-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--donor-text);
+}
+
+.donor-ui .ngo-sroi-card-desc {
+  margin: 0 0 1rem;
+  font-size: 0.88rem;
+  color: var(--donor-muted);
+  line-height: 1.5;
+}
+
+.donor-ui .ngo-sroi-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.donor-ui .ngo-sroi-stats dt {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--donor-muted);
+}
+
+.donor-ui .ngo-sroi-stats dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--donor-text);
+}
+
+.donor-ui .ngo-sroi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--donor-text);
+  margin-bottom: 0.75rem;
+}
+
+.donor-ui .ngo-sroi-ratio {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--narinan-dark);
+}
+
+.donor-ui .ngo-sroi-calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .donor-ui .ngo-sroi-calc-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.donor-ui .ngo-sroi-calc-card {
+  background: var(--donor-surface);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+}
+
+.donor-ui .ngo-sroi-calc-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--narinan-dark);
+}
+
+.donor-ui .ngo-sroi-calc-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.donor-ui .ngo-sroi-calc-lead {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--donor-muted);
+  line-height: 1.45;
+}
+
+.donor-ui .ngo-sroi-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.donor-ui .ngo-sroi-result-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  color: var(--donor-muted);
+}
+
+.donor-ui .ngo-sroi-result-row strong {
+  color: var(--donor-text);
+  font-weight: 800;
+}
+
+.donor-ui .ngo-sroi-result-total {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 0.5rem;
+  margin-top: 0.35rem;
+  border-top: 2px solid var(--narinan-light);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.donor-ui .ngo-sroi-result-total strong {
+  color: var(--narinan-dark);
+  font-size: 1.15rem;
+}
+
+.donor-ui .ngo-sroi-per-unit {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--narinan-dark);
+}
+
+.donor-ui .ngo-sroi-per-unit-detail {
+  display: block;
+  font-weight: 600;
+  color: var(--donor-muted);
+  margin-top: 0.15rem;
+}
+
+.donor-ui .ngo-sroi-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.78rem;
+  color: var(--donor-muted);
+  line-height: 1.4;
+}
+
+.donor-ui .ngo-sroi-breakdown-wrap {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .donor-ui .ngo-sroi-breakdown-wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+.donor-ui .ngo-sroi-legend {
+  font-size: 0.82rem;
+  color: var(--donor-muted);
+  line-height: 1.5;
+}
+
+.donor-ui .ngo-sroi-legend p {
+  margin: 0 0 0.5rem;
+}

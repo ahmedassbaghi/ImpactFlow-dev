@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RoleLayout } from "./components/layout/MobileShell";
 import LoginPage from "./pages/Login";
+import RegisterPage from "./pages/Register";
 import AdminControlCenterPage from "./pages/admin/AdminControlCenter";
 import OverviewPage from "./pages/Overview";
 import ProgramDashboardPage from "./pages/coordinator/ProgramDashboard";
@@ -18,6 +19,7 @@ import SessionLoggerPage from "./pages/professional/SessionLogger";
 import ProgramsPage from "./pages/coordinator/ProgramsPage";
 import SessionsHistoryPage from "./pages/coordinator/SessionsHistoryPage";
 import AdvancedAnalyticsPage from "./pages/coordinator/AdvancedAnalyticsPage";
+import DataSimulationPage from "./pages/coordinator/DataSimulationPage";
 import ProgressPage from "./pages/voluntari/ProgressPage";
 import SeguimentPage from "./pages/voluntari/SeguimentPage";
 import { useAuthStore } from "./stores/authStore";
@@ -50,6 +52,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route path="/voluntari/session-logger" element={<Navigate to="/professional/session-logger" replace />} />
       <Route
         path="/admin/control-center"
@@ -91,6 +94,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/voluntari/avaluacio" element={<Navigate to="/voluntari/seguiment" replace />} />
       <Route
         path="/coordinator/dashboard"
         element={
@@ -176,6 +180,14 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
             <AdvancedAnalyticsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/simulation"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <DataSimulationPage />
           </ProtectedRoute>
         }
       />

@@ -42,17 +42,13 @@ export async function getSessionQuality(programId: string, periodStart: string, 
 export async function getCostEffectiveness(
   programId: string,
   periodStart: string,
-  periodEnd: string,
-  totalCostEur: number,
-  comparatorCostEur: number
+  periodEnd: string
 ) {
   const { data } = await apiClient.get("/analytics/cost-effectiveness", {
     params: {
       program_id: programId,
       period_start: periodStart,
       period_end: periodEnd,
-      total_cost_eur: totalCostEur,
-      comparator_cost_eur: comparatorCostEur,
     },
   });
   return data as {
@@ -72,6 +68,82 @@ export async function getCostEffectiveness(
       cost_per_ipi_point_gained: number | null;
       icer_vs_previous_period: number | null;
     };
+    period_investment?: {
+      n_sessions: number;
+      cost_per_session_eur: number;
+      total_cost_eur: number;
+      auto_calculated: boolean;
+    };
+    comparator_investment?: {
+      n_sessions: number;
+      total_cost_eur: number;
+      auto_calculated: boolean;
+    };
+  };
+}
+
+export type SroiFormulaExplanation = {
+  headline: string;
+  numerator_eur: number;
+  denominator_eur: number;
+  ratio: number;
+  numerator_components: Array<{
+    key: string;
+    label: string;
+    short: string;
+    hint: string;
+    color: string;
+    eur: number;
+    share_pct: number;
+  }>;
+  denominator_components: Array<{
+    id: string;
+    label: string;
+    eur: number;
+    formula_text: string;
+  }>;
+  inputs: Record<string, number>;
+  corrections: {
+    deadweight_pct: number;
+    attribution_pct: number;
+    drop_off_pct: number;
+    combined_multiplier: number;
+    note: string;
+  };
+  saturation_note: string;
+  sensitivity: Record<string, number>;
+  methodology_reference: string;
+};
+
+export async function getPeriodSroi(programId: string, periodStart: string, periodEnd: string) {
+  const { data } = await apiClient.get("/analytics/sroi", {
+    params: {
+      program_id: programId,
+      period_start: periodStart,
+      period_end: periodEnd,
+    },
+  });
+  return data as {
+    sroi_ratio: number;
+    sroi_statement: string;
+    total_social_value_eur: number;
+    total_investment_eur: number;
+    value_breakdown: Record<string, number>;
+    n_participants: number;
+    avg_ipi_gain: number;
+    program_duration_months: number;
+    period_investment?: {
+      n_sessions: number;
+      cost_per_session_eur: number;
+      marginal_cost_per_session_eur?: number;
+      monthly_fixed_cost_per_participant_eur?: number;
+      total_cost_eur: number;
+      auto_calculated: boolean;
+      volunteer_reference_value_eur?: number;
+    };
+    outcomes_breakdown?: Record<string, number>;
+    formula_explanation?: SroiFormulaExplanation;
+    sensitivity_analysis?: { conservative: number; central: number; optimistic: number };
   };
 }
 
@@ -115,14 +187,107 @@ export async function getDimensionVelocity(programId: string) {
   return data;
 }
 
+export type NgoSroiCalculator = {
+  model_explanation?: {
+    input_label: string;
+    output_label: string;
+    ratio_label: string;
+    excluded_note: string;
+  };
+  methodology_reference: string;
+  program: {
+    n_participants: number;
+    n_sessions: number;
+    total_volunteer_hours: number;
+    imputed_volunteer_cost_eur?: number;
+    imputed_program_cost_eur?: number;
+    hourly_rate_eur: number;
+    avg_duration_h: number;
+    program_duration_months: number;
+    avg_ipi_gain: number;
+  };
+  impact: {
+    outcomes_value_eur: number;
+    family_benefit_eur: number;
+    collective_benefit_eur: number;
+    outcomes_breakdown?: Record<string, number>;
+    sroi_per_euro_invested: number;
+    sroi_statement: string;
+    total_value_eur?: number;
+    economic_value_eur?: number;
+    social_value_eur?: number;
+    value_breakdown?: Record<string, number>;
+    sroi_ratio_imputed?: number;
+    sroi_outcomes_only?: number;
+    sroi_statement_imputed?: string;
+  };
+  money_calculator: {
+    contribution_eur: number;
+    family_benefit_eur: number;
+    collective_benefit_eur: number;
+    total_benefit_eur: number;
+    value_per_euro: number;
+    share_of_program_pct?: number;
+    statement: string;
+    note: string;
+    social_value_eur?: number;
+    economic_value_eur?: number;
+    total_value_eur?: number;
+  };
+  volunteer_calculator: {
+    volunteer_hours: number;
+    family_benefit_eur: number;
+    collective_benefit_eur: number;
+    total_benefit_eur: number;
+    family_benefit_per_hour_eur?: number;
+    collective_benefit_per_hour_eur?: number;
+    outcomes_per_hour_eur?: number;
+    statement: string;
+    note: string;
+    social_value_eur?: number;
+    economic_value_eur?: number;
+    total_value_eur?: number;
+    social_value_per_hour_eur?: number;
+    economic_value_per_hour_eur?: number;
+    total_value_per_hour_eur?: number;
+  };
+  sensitivity_analysis?: Record<string, number>;
+};
+
+export async function getDonorSROICalculator(
+  orgSlug: string,
+  opts: {
+    contributionEur?: number;
+    volunteerHours?: number;
+    programId?: string;
+  } = {}
+) {
+  const { data } = await apiClient.get<NgoSroiCalculator>(
+    `/dashboard/donor/${orgSlug}/sroi-calculator`,
+    {
+      params: {
+        contribution_eur: opts.contributionEur ?? 1000,
+        volunteer_hours: opts.volunteerHours ?? 1,
+        program_id: opts.programId,
+      },
+    }
+  );
+  return data;
+}
+
+/** @deprecated Usa getDonorSROICalculator */
 export async function getDonorSROI(
   orgSlug: string,
-  costEur: number,
-  months: number,
+  costEur?: number,
+  months?: number,
   programId?: string
 ) {
   const { data } = await apiClient.get(`/dashboard/donor/${orgSlug}/sroi`, {
-    params: { cost_eur: costEur, months, program_id: programId },
+    params: {
+      ...(costEur != null && costEur > 0 ? { cost_eur: costEur } : {}),
+      ...(months != null ? { months } : {}),
+      ...(programId ? { program_id: programId } : {}),
+    },
   });
   return data;
 }

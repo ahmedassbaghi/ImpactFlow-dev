@@ -58,7 +58,7 @@ async def ensure_participant_access(
     db: AsyncSession, user: User, participant_id: str
 ) -> Participant:
     participant = await get_org_participant(db, participant_id, user.organization_id)
-    await assert_professional_assigned(db, user, participant)
+    await assert_professional_assigned(db, user, participant_id)
     return participant
 
 

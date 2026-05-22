@@ -1,7 +1,10 @@
 const BREAKDOWN_LABELS: Record<string, { label: string; color: string }> = {
+  family_tutoring_value: { label: "Estalvi reforç privat (hores)", color: "var(--dim-academic)" },
+  academic_ipi_value: { label: "Millora acadèmica (IPI × dosi)", color: "var(--dim-academic)" },
   academic_improvement: { label: "Millora acadèmica", color: "var(--dim-academic)" },
   exclusion_risk_reduction: { label: "Reducció risc exclusió", color: "var(--risk-high)" },
   integration_value: { label: "Valor d'integració", color: "var(--dim-integration)" },
+  program_delivery_value: { label: "Suport educatiu grupal", color: "var(--dim-social)" },
   attendance_value: { label: "Suport educatiu", color: "var(--dim-social)" },
 };
 

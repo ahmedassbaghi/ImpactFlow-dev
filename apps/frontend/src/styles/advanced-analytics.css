@@ -1,4 +1,66 @@
 /* ─── ADVANCED ANALYTICS PAGE ────────────────────────────────────────── */
+.adv-sroi-summary {
+  grid-column: 1 / -1;
+  gap: 20px;
+}
+
+.adv-sroi-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.adv-sroi-kpi {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.adv-sroi-kpi-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.adv-sroi-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin-top: 0.2rem;
+  line-height: 1.1;
+}
+
+.adv-sroi-kpi-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.adv-sroi-kpi--hero {
+  border-color: #fcd9b8;
+  background: linear-gradient(135deg, #fff8f3, var(--surface-2));
+}
+
+.adv-sroi-kpi--hero .adv-sroi-kpi-value {
+  color: var(--narinan-dark, #c2410c);
+}
+
+.adv-mc-auto-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+}
+
+.adv-mc-auto-note strong {
+  color: var(--text-primary);
+}
+
 .adv-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

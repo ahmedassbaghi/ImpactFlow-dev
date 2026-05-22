@@ -1,0 +1,100 @@
+/* Portal donant — evolució per dimensions */
+
+.dim-evolution {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dim-evolution-card {
+  background: var(--donor-surface, #fff);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.dim-evolution-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.dim-evolution-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.dim-evolution-desc {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--donor-muted, #64748b);
+  line-height: 1.4;
+}
+
+.dim-evolution-gain {
+  font-size: 0.9rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dim-evolution-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.dim-evolution-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 36px;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dim-evolution-row-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--donor-text, #0f172a);
+}
+
+.dim-evolution-track {
+  height: 14px;
+  background: #e8edf2;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid #d1dae6;
+}
+
+.dim-evolution-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.dim-evolution-fill--baseline {
+  opacity: 0.55;
+}
+
+.dim-evolution-fill--current {
+  opacity: 1;
+}
+
+.dim-evolution-value {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--donor-text, #0f172a);
+  text-align: right;
+}
+
+.dim-evolution-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.45rem;
+  padding: 0 52px 0 58px;
+  font-size: 0.68rem;
+  color: var(--donor-muted, #64748b);
+}

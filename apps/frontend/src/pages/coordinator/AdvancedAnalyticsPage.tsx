@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Dices,
+  Calculator,
   Gauge,
   Globe,
   Sparkles,
@@ -39,13 +40,21 @@ import {
   getDimensionEffects,
   getDoseResponse,
   getMonteCarloSROI,
+  getProgramSroi,
   getTrajectoryAnomalies,
   type AnomalyAlert,
   type DimensionEffect,
+  type ProgramSroiSnapshot,
 } from "../../api/advanced";
 import { InterRaterReliabilityCard } from "../../components/analytics/InterRaterReliabilityCard";
+import SROIFormulaExplainer from "../../components/sroi/SROIFormulaExplainer";
+import { computeCoordinatorPeriod } from "../../utils/coordinatorPeriod";
 
 const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
+
+function formatEur(n: number) {
+  return `€${n.toLocaleString("ca-ES", { maximumFractionDigits: 0 })}`;
+}
 
 function SectionHeader({
   icon: Icon,
@@ -204,7 +213,7 @@ function DoseResponseCard({ programId }: { programId: string }) {
       <SectionHeader
         icon={Gauge}
         title="Corba dosi-resposta"
-        subtitle="Quanta dosi (sessions o hores) genera quina millora? Identifica el punt de rendiments decreixents."
+        subtitle="Per participant: sessions o hores registrades vs guany IPI. Complementa el model SROI (4 sess./infant/mes = referència)."
         badge={data.r_squared !== null ? <span className="adv-badge-info">R² = {data.r_squared.toFixed(2)}</span> : undefined}
       />
 
@@ -303,26 +312,153 @@ function DoseResponseCard({ programId }: { programId: string }) {
   );
 }
 
-// ─── Monte Carlo SROI ─────────────────────────────────────────────────────
-function MonteCarloSROICard({ programId }: { programId: string }) {
-  const [costEur, setCostEur] = useState(15000);
-  const [months, setMonths] = useState(9);
-  const { data, isLoading } = useQuery({
-    queryKey: ["mc-sroi", programId, costEur, months],
-    queryFn: () => getMonteCarloSROI(programId, costEur, months, 5000),
+// ─── SROI model (deterministic, from registers) ───────────────────────────
+function SROIModelSummaryCard({
+  programId,
+  periodStart,
+  periodEnd,
+  periodLabel,
+}: {
+  programId: string;
+  periodStart: string;
+  periodEnd: string;
+  periodLabel: string;
+}) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["period-sroi", programId, periodStart, periodEnd],
+    queryFn: () => getProgramSroi(programId, periodStart, periodEnd),
     enabled: !!programId,
   });
+
+  if (isLoading) return <div className="adv-card adv-card-loading adv-sroi-summary">Carregant SROI…</div>;
+  if (isError || !data) {
+    return (
+      <div className="adv-card adv-card-error adv-sroi-summary">
+        No s&apos;ha pogut carregar el model SROI del programa.
+      </div>
+    );
+  }
+
+  const dose = data.dose_metrics;
+  const sens = data.sensitivity_analysis;
+
+  return (
+    <div className="adv-card adv-sroi-summary">
+      <SectionHeader
+        icon={Calculator}
+        title="Model SROI del període"
+        subtitle={`Mateix càlcul que el dashboard del coordinador (${periodLabel}). Sessions, IPI i cost mixt del període seleccionat.`}
+        badge={
+          <span className="adv-badge-info">{data.sroi_ratio.toFixed(2)}× SROI</span>
+        }
+      />
+
+      <div className="adv-sroi-kpi-row">
+        <div className="adv-sroi-kpi adv-sroi-kpi--hero">
+          <div className="adv-sroi-kpi-label">SROI actual</div>
+          <div className="adv-sroi-kpi-value">{data.sroi_ratio.toFixed(2)}×</div>
+          <div className="adv-sroi-kpi-hint">{data.sroi_statement}</div>
+        </div>
+        <div className="adv-sroi-kpi">
+          <div className="adv-sroi-kpi-label">Beneficis mesurats</div>
+          <div className="adv-sroi-kpi-value">{formatEur(data.total_social_value_eur)}</div>
+        </div>
+        <div className="adv-sroi-kpi">
+          <div className="adv-sroi-kpi-label">Cost en efectiu</div>
+          <div className="adv-sroi-kpi-value">{formatEur(data.total_investment_eur)}</div>
+        </div>
+        <div className="adv-sroi-kpi">
+          <div className="adv-sroi-kpi-label">Sessions registrades</div>
+          <div className="adv-sroi-kpi-value">{dose?.sessions_registered ?? "—"}</div>
+          {dose && (
+            <div className="adv-sroi-kpi-hint">
+              {dose.sessions_per_participant} / infant · {dose.sessions_effective} efectives
+            </div>
+          )}
+        </div>
+        <div className="adv-sroi-kpi">
+          <div className="adv-sroi-kpi-label">Dosi programa</div>
+          <div className="adv-sroi-kpi-value">{dose ? `${dose.dose_ratio.toFixed(2)}×` : "—"}</div>
+          {dose && (
+            <div className="adv-sroi-kpi-hint">
+              Multiplicador IPI: {dose.dose_outcomes_multiplier.toFixed(2)}×
+            </div>
+          )}
+        </div>
+        {sens && (
+          <div className="adv-sroi-kpi">
+            <div className="adv-sroi-kpi-label">Sensibilitat</div>
+            <div className="adv-sroi-kpi-value" style={{ fontSize: "1rem" }}>
+              {sens.conservative.toFixed(1)}–{sens.optimistic.toFixed(1)}×
+            </div>
+            <div className="adv-sroi-kpi-hint">conservador → optimista</div>
+          </div>
+        )}
+      </div>
+
+      {data.formula_explanation && (
+        <SROIFormulaExplainer formula={data.formula_explanation} formatCurrency={formatEur} />
+      )}
+    </div>
+  );
+}
+
+// ─── Monte Carlo SROI ─────────────────────────────────────────────────────
+function MonteCarloSROICard({
+  programId,
+  metrics,
+  periodStart,
+  periodEnd,
+}: {
+  programId: string;
+  metrics?: ProgramSroiSnapshot;
+  periodStart: string;
+  periodEnd: string;
+}) {
+  const [costOverride, setCostOverride] = useState<number | null>(null);
+  const [monthsOverride, setMonthsOverride] = useState<number | null>(null);
+  const autoCost = metrics?.total_investment_eur ?? 0;
+  const autoMonths = metrics?.program_duration_months ?? 9;
+  const costEur = costOverride ?? autoCost;
+  const months = monthsOverride ?? autoMonths;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["mc-sroi", programId, periodStart, periodEnd, costEur, months, costOverride, monthsOverride],
+    queryFn: () =>
+      getMonteCarloSROI(programId, {
+        costEur: costOverride ?? undefined,
+        months: monthsOverride ?? undefined,
+        periodStart,
+        periodEnd,
+        nIter: 5000,
+      }),
+    enabled: !!programId && autoCost > 0,
+  });
+
+  if (!metrics || autoCost <= 0) {
+    return (
+      <div className="adv-card">
+        <SectionHeader
+          icon={Dices}
+          title="SROI amb incertesa (Monte Carlo)"
+          subtitle="Cal registres de sessions i cost operatiu per simular."
+        />
+        <p className="adv-warning">Encara no hi ha prou dades de sessions per a la simulació.</p>
+      </div>
+    );
+  }
 
   if (isLoading || !data) return <div className="adv-card adv-card-loading">Simulant…</div>;
 
   const chartData = data.distribution_bins.map((b) => ({ sroi: b.x, freq: b.count }));
+  const detRatio = metrics.sroi_ratio;
 
   return (
     <div className="adv-card">
       <SectionHeader
         icon={Dices}
         title="SROI amb incertesa (Monte Carlo)"
-        subtitle="5000 simulacions mostrejant proxies, deadweight, attribution i variabilitat de l'IPI."
+        subtitle="5000 escenaris: variació de l'IPI, proxies, sessions (±15%) i cost recalculat per iteració (mateix model que el dashboard)."
         badge={
           <span className={`adv-badge-${data.prob_above_1 >= 0.8 ? "good" : data.prob_above_1 >= 0.5 ? "warn" : "bad"}`}>
             P(SROI&gt;1) = {fmtPct(data.prob_above_1)}
@@ -330,16 +466,24 @@ function MonteCarloSROICard({ programId }: { programId: string }) {
         }
       />
 
+      <p className="adv-mc-auto-note">
+        Valors per defecte des de registres: <strong>{formatEur(autoCost)}</strong> de cost,{" "}
+        <strong>{metrics.dose_metrics?.sessions_registered ?? "—"} sessions</strong>,{" "}
+        <strong>{months} mesos</strong>. SROI determinista: <strong>{detRatio.toFixed(2)}×</strong> vs
+        Monte Carlo central: <strong>{data.central_estimate.toFixed(2)}×</strong>.
+      </p>
+
       <div className="adv-mc-controls">
         <label className="adv-mc-input-wrap">
           <span>Cost programa (€)</span>
           <input
             type="number"
             min={1000}
-            step={1000}
+            step={500}
             value={costEur}
-            onChange={(e) => setCostEur(Math.max(1000, Number(e.target.value) || 1000))}
+            onChange={(e) => setCostOverride(Math.max(1000, Number(e.target.value) || 1000))}
             className="adv-mc-input"
+            aria-describedby="mc-cost-hint"
           />
         </label>
         <label className="adv-mc-input-wrap">
@@ -349,11 +493,24 @@ function MonteCarloSROICard({ programId }: { programId: string }) {
             min={1}
             max={36}
             value={months}
-            onChange={(e) => setMonths(Math.max(1, Number(e.target.value) || 1))}
+            onChange={(e) => setMonthsOverride(Math.max(1, Number(e.target.value) || 1))}
             className="adv-mc-input"
           />
         </label>
+        <button
+          type="button"
+          className="adv-toggle-btn"
+          onClick={() => {
+            setCostOverride(null);
+            setMonthsOverride(null);
+          }}
+        >
+          Restaurar des de registres
+        </button>
       </div>
+      <p id="mc-cost-hint" className="adv-sroi-kpi-hint" style={{ margin: 0 }}>
+        El cost es recalcula a cada simulació segons sessions (45 €/part./mes + 15 €/sessió efectiva).
+      </p>
 
       <div className="adv-mc-headline">
         <div className="adv-mc-central">
@@ -585,9 +742,20 @@ export default function AdvancedAnalyticsPage() {
   const [schoolId, setSchoolId] = useState<string>("");
   const { data: schools = [] } = useQuery({ queryKey: ["schools"], queryFn: listSchools });
 
-  if (!programId && programs.length > 0) {
-    setProgramId(programs[0].id);
-  }
+  useEffect(() => {
+    if (!programId && programs.length > 0) {
+      setProgramId(programs[0].id);
+    }
+  }, [programId, programs]);
+
+  const period = useMemo(() => computeCoordinatorPeriod(), []);
+  const periodLabel = `${period.fmtStart} — ${period.fmtEnd}`;
+
+  const { data: programSroi } = useQuery({
+    queryKey: ["period-sroi", programId, period.periodStart, period.periodEnd],
+    queryFn: () => getProgramSroi(programId, period.periodStart, period.periodEnd),
+    enabled: !!programId,
+  });
 
   return (
     <div className="page-container">
@@ -598,7 +766,7 @@ export default function AdvancedAnalyticsPage() {
             Anàlisi avançada
           </h1>
           <p className="page-subtitle">
-            Mides d'efecte, dosi-resposta, simulació Monte Carlo i detecció d'anomalies — el motor científic d'ImpactFlow.
+            SROI del període {periodLabel} (alineat amb el dashboard), dosi-resposta IPI, Monte Carlo i anomalies.
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -640,10 +808,21 @@ export default function AdvancedAnalyticsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
+          <SROIModelSummaryCard
+            programId={programId}
+            periodStart={period.periodStart}
+            periodEnd={period.periodEnd}
+            periodLabel={periodLabel}
+          />
           <DimensionEffectsCard programId={programId} />
           <InterRaterReliabilityCard programId={programId} />
           <DoseResponseCard programId={programId} />
-          <MonteCarloSROICard programId={programId} />
+          <MonteCarloSROICard
+            programId={programId}
+            metrics={programSroi}
+            periodStart={period.periodStart}
+            periodEnd={period.periodEnd}
+          />
           <AnomalyCard programId={programId} />
         </motion.div>
       )}

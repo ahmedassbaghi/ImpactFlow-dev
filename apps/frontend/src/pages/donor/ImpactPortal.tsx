@@ -5,14 +5,13 @@ import { Cell, Pie, PieChart, Tooltip, ResponsiveContainer } from "recharts";
 import {
   BookOpen, Brain, Users2, Globe,
   BarChart3, FlaskConical, Ruler, RefreshCw,
-  ChevronDown, ChevronUp, Filter,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
-import { getDonorDashboard, getDonorSROI, getInterventionEffect, getPublicPrograms } from "../../api/dashboard";
-import SROIStatement from "../../components/sroi/SROIStatement";
-import SROIBreakdown from "../../components/sroi/SROIBreakdown";
+import { getDonorDashboard, getDonorSROICalculator, getInterventionEffect } from "../../api/dashboard";
+import SROINGOCalculators from "../../components/sroi/SROINGOCalculators";
+import DimensionEvolutionChart from "../../components/donor/DimensionEvolutionChart";
 
-const DEFAULT_COST_EUR = 18000;
-const DEFAULT_MONTHS = 9;
+const DEFAULT_CONTRIBUTION_EUR = 1000;
 const ORG_SLUG = "narinan";
 
 const RISK_COLORS: Record<string, string> = {
@@ -84,7 +83,7 @@ function InfoBox({ children }: { children: React.ReactNode }) {
     <div className="info-box">
       <button type="button" className="info-box-toggle" onClick={() => setOpen(!open)}>
         {open ? <ChevronUp size={14} strokeWidth={2.5} /> : <ChevronDown size={14} strokeWidth={2.5} />}
-        Com s'han calculat els euros?
+        Què inclou aquesta estimació?
       </button>
       {open && <div className="info-box-body">{children}</div>}
     </div>
@@ -92,14 +91,11 @@ function InfoBox({ children }: { children: React.ReactNode }) {
 }
 
 export default function ImpactPortalPage() {
-  const [costEur, setCostEur] = useState(DEFAULT_COST_EUR);
-  const [months, setMonths] = useState(DEFAULT_MONTHS);
-  const [costInput, setCostInput] = useState(String(DEFAULT_COST_EUR));
-  const [selectedProgramId, setSelectedProgramId] = useState<string>("");
-
+  const [contributionEur, setContributionEur] = useState(DEFAULT_CONTRIBUTION_EUR);
+  const [volunteerHours, setVolunteerHours] = useState(1);
   const { data: donor, isLoading: donorLoading } = useQuery({
-    queryKey: ["donor-dashboard", ORG_SLUG, selectedProgramId],
-    queryFn: () => getDonorDashboard(ORG_SLUG, selectedProgramId || undefined),
+    queryKey: ["donor-dashboard", ORG_SLUG],
+    queryFn: () => getDonorDashboard(ORG_SLUG),
   });
 
   const programId = donor?.program_id;
@@ -110,33 +106,24 @@ export default function ImpactPortalPage() {
     enabled: !!programId,
   });
 
-  const { data: sroi, isLoading: sroiLoading, isError: sroiError } = useQuery({
-    queryKey: ["donor-sroi", ORG_SLUG, selectedProgramId, costEur, months],
-    queryFn: () => getDonorSROI(ORG_SLUG, costEur, months, selectedProgramId || undefined),
+  const { data: sroiCalc, isLoading: sroiLoading, isError: sroiError } = useQuery({
+    queryKey: ["donor-sroi-calc", ORG_SLUG, programId, contributionEur, volunteerHours],
+    queryFn: () =>
+      getDonorSROICalculator(ORG_SLUG, {
+        contributionEur,
+        volunteerHours,
+        programId: programId || undefined,
+      }),
   });
-
-  const { data: programs } = useQuery({
-    queryKey: ["donor-programs", ORG_SLUG],
-    queryFn: () => getPublicPrograms(ORG_SLUG),
-  });
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const v = Number(costInput);
-      if (!isNaN(v) && v >= 100) {
-        setCostEur(v);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [costInput]);
 
   const donorReady = !donorLoading && !!donor;
-  const sroiReady = !sroiLoading && !!sroi;
+  const sroiReady = !sroiLoading && !!sroiCalc;
 
   const nParticipants = donor?.n_participants ?? 0;
   const avgIpiGainPct = donor?.avg_ipi_gain_pct ?? 0;
-  const sroiRatio = sroi?.sroi_ratio ?? 0;
+  const sroiPerEuro =
+    sroiCalc?.impact.sroi_per_euro_invested ?? sroiCalc?.impact.sroi_ratio_imputed ?? 0;
+  const imputedCost = sroiCalc?.program.operating_cost_eur ?? sroiCalc?.program.imputed_program_cost_eur ?? 0;
   const riskDist = donor?.risk_distribution ?? { low: 0, medium: 0, high: 0 };
   const dimEvolution = donor?.dimension_evolution ?? {};
 
@@ -153,7 +140,7 @@ export default function ImpactPortalPage() {
 
   const handleDownloadEvidence = () => {
     if (!programId) return;
-    const url = `${apiBase}/analytics/evidence-export?program_id=${programId}&cost_eur=${costEur}`;
+    const url = `${apiBase}/analytics/evidence-export?program_id=${programId}&cost_eur=${imputedCost || 0}`;
     window.open(url, "_blank");
   };
 
@@ -167,7 +154,7 @@ export default function ImpactPortalPage() {
           <div className="donor-hero-eyebrow">Narinaan · Mesura d'Impacte Social 2024–25</div>
           <h1 className="donor-hero-title">De l'activitat a l'evidència.</h1>
           <p className="donor-hero-subtitle">
-            Dades reals, metodologia rigorosa, transparència total.
+            Impacte mesurable, transparència i confiança.
           </p>
 
           {!donorReady || !sroiReady ? (
@@ -182,15 +169,15 @@ export default function ImpactPortalPage() {
               </div>
               <div className="donor-counter-card">
                 <div className="donor-counter-value">
-                  <AnimatedCounter target={avgIpiGainPct} decimals={1} suffix=" pts" />
+                  <AnimatedCounter target={avgIpiGainPct} decimals={1} suffix="%" />
                 </div>
                 <div className="donor-counter-label">Millora mitjana IPI</div>
               </div>
               <div className="donor-counter-card">
                 <div className="donor-counter-value">
-                  €<AnimatedCounter target={sroiRatio} decimals={2} />
+                  €<AnimatedCounter target={sroiPerEuro} decimals={2} />
                 </div>
-                <div className="donor-counter-label">Valor social per cada €1 invertit</div>
+                <div className="donor-counter-label">Valor generat per cada €1 invertit</div>
               </div>
             </div>
           )}
@@ -206,33 +193,13 @@ export default function ImpactPortalPage() {
         </div>
       </section>
 
-      {/* ── SELECTOR PROGRAMA ──────────────────────────────────── */}
-      <div className="donor-selector-bar">
-        <div className="donor-selector-inner">
-          <Filter size={16} className="donor-selector-icon" />
-          <span className="donor-selector-label">Veure dades de:</span>
-          <select
-            className="donor-program-select"
-            value={selectedProgramId}
-            onChange={(e) => setSelectedProgramId(e.target.value)}
-          >
-            <option value="">Tots els programes</option>
-            {programs?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       {/* ── 2. FUNCIÓ DE NARINAN ───────────────────────────────── */}
       <section className="donor-section">
         <h2 className="donor-section-title">Què fa Narinan?</h2>
         <p className="donor-section-sub">
           Narinan acompanya infants i joves en situació de vulnerabilitat mitjançant programes
           socioeducatius a les escoles: reforç escolar, teatre social, suport emocional i integració.
-          Els voluntaris registren cada sessió; la coordinació mesura el progrés real amb l'IPI.
+          Cada infant és acompanyat amb constància i el seu progrés es fa visible al llarg del curs.
         </p>
         <div className="donor-photo-grid">
           <img src="/images/narinan/activity-1.svg" alt="Sessió de reforç escolar en petit grup" width={280} height={180} />
@@ -259,90 +226,53 @@ export default function ImpactPortalPage() {
             Encara no hi ha prou dades per mostrar l'evolució per dimensions.
           </p>
         ) : (
-          <div className="before-after-grid">
-            {Object.entries(dimEvolution).map(([dim, data]: [string, any]) => {
-              const baseline = data?.baseline ?? 0;
-              const current = data?.current ?? 0;
-              const gain = data?.gain ?? 0;
-              return (
-                <div key={dim} className="before-after-item">
-                  <div className="before-after-header">
-                    <div>
-                      <span className="before-after-dim" style={{ color: DIM_COLORS[dim] }}>
-                        {DIM_LABELS[dim] ?? dim}
-                      </span>
-                      <div className="before-after-dim-desc">{DIM_DESCS[dim]}</div>
-                    </div>
-                    <span className="before-after-gain" style={{ color: gain > 0 ? "var(--risk-low)" : gain < 0 ? "var(--risk-high)" : "var(--text-muted)" }}>
-                      {gain > 0 ? "+" : ""}{gain.toFixed(1)} pts
-                    </span>
-                  </div>
-                  <div className="before-after-bars">
-                    <div className="before-after-bar-row">
-                      <span className="before-after-bar-label">Entrada</span>
-                      <div className="before-after-bar-track">
-                        <motion.div className="before-after-bar" style={{ background: "var(--surface-3)" }} initial={{ width: 0 }} animate={{ width: `${Math.min(baseline, 100)}%` }} transition={{ duration: 1.2, ease: "easeOut" }} />
-                      </div>
-                      <span className="before-after-bar-pct">{baseline.toFixed(0)} pts</span>
-                    </div>
-                    <div className="before-after-bar-row">
-                      <span className="before-after-bar-label">Ara</span>
-                      <div className="before-after-bar-track">
-                        <motion.div className="before-after-bar" style={{ background: DIM_COLORS[dim] }} initial={{ width: 0 }} animate={{ width: `${Math.min(current, 100)}%` }} transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }} />
-                      </div>
-                      <span className="before-after-bar-pct">{current.toFixed(0)} pts</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <DimensionEvolutionChart
+            dimensions={dimEvolution}
+            dimLabels={DIM_LABELS}
+            dimDescs={DIM_DESCS}
+            dimColors={DIM_COLORS}
+          />
         )}
       </section>
 
-      {/* ── 4. SROI ───────────────────────────────────────────── */}
+      {/* ── 4. SROI / Calculadores ONG ─────────────────────────── */}
       <section className="donor-section">
-        <h2 className="donor-section-title">Retorn social de la inversió (SROI)</h2>
-        {sroiLoading && <p className="donor-loading-text">Calculant SROI…</p>}
-        {sroiError && <p className="form-error" role="alert">No s'ha pogut calcular l'SROI. Comprova la connexió.</p>}
-        {sroi && (
-          <>
-          <p className="donor-section-sub">
-            Ajusta la inversió i la durada per simular l'impacte del teu programa.
+        <h2 className="donor-section-title">Simula la teva aportació</h2>
+        <p className="donor-section-sub">
+          Prova amb un import en euros o amb hores de voluntariat i descobreix l&apos;impacte estimat.
+        </p>
+        {sroiLoading && <p className="donor-loading-text">Calculant impacte…</p>}
+        {sroiError && (
+          <p className="form-error" role="alert">
+            No s&apos;ha pogut carregar l&apos;estimació. Torna-ho a provar més tard.
           </p>
-          <div className="sroi-config-row">
-            <label className="sroi-config-field" htmlFor="donor-sroi-cost">
-              <span className="sroi-config-label">Inversió total del programa (€)</span>
-              <input
-                id="donor-sroi-cost"
-                className="form-input sroi-config-input"
-                type="number"
-                min={1000}
-                step={500}
-                value={costInput}
-                onChange={(e) => setCostInput(e.target.value)}
-              />
-            </label>
-            <label className="sroi-config-field" htmlFor="donor-sroi-months">
-              <span className="sroi-config-label">Durada del programa (mesos)</span>
-              <input
-                id="donor-sroi-months"
-                className="form-input sroi-config-input"
-                type="number"
-                min={1}
-                max={36}
-                step={1}
-                value={months}
-                onChange={(e) => setMonths(Math.max(1, Number(e.target.value)))}
-              />
-            </label>
-          </div>
-          <div className="sroi-layout">
-            <SROIStatement sroiRatio={sroi.sroi_ratio} conservative={sroi.sensitivity_analysis?.conservative} optimistic={sroi.sensitivity_analysis?.optimistic} statement={sroi.sroi_statement} />
-            <SROIBreakdown breakdown={sroi.value_breakdown ?? {}} />
-          </div>
-          </>
         )}
+        {sroiCalc && (
+          <SROINGOCalculators
+            data={sroiCalc}
+            contributionEur={contributionEur}
+            onContributionChange={setContributionEur}
+            volunteerHours={volunteerHours}
+            onVolunteerHoursChange={setVolunteerHours}
+          />
+        )}
+        <InfoBox>
+          <p>
+            <strong>Famílies:</strong> menys despesa en reforç escolar privat quan l&apos;infant
+            millora.
+          </p>
+          <p>
+            <strong>Comunitat:</strong> menys situacions de risc que requereixen suport públic
+            intensiu.
+          </p>
+          <p>
+            <strong>Integració:</strong> més autonomia, pertinença i seguretat en el dia a dia.
+          </p>
+          <p>
+            <strong>Suport educatiu:</strong> valor de les hores de sessió registrades (amb rendiments decreixents si la
+            intensitat supera 4 sessions per participant i mes).
+          </p>
+        </InfoBox>
       </section>
 
       {/* ── 5. QUÈ I COM MESUREM (desplegables) ─────────────────── */}
@@ -450,7 +380,7 @@ export default function ImpactPortalPage() {
               p-valor (Wilcoxon)
             </div>
             <div className="stat-evidence-hint">
-              {pValue == null ? "Calen més sessions registrades per calcular la significació"
+              {pValue == null ? "Encara no hi ha prou dades per calcular la significació"
                 : pValue < 0.05
                   ? "La millora NO és per atzar (p < 0.05)"
                   : "No hi ha prou evidència estadística (p ≥ 0.05)"}
@@ -485,7 +415,7 @@ export default function ImpactPortalPage() {
         <summary>Qui és qui al programa?</summary>
         <div className="donor-accordion-body">
         <p className="donor-section-sub" style={{ marginTop: "0.75rem" }}>
-          Distribució d'alumnes per nivell de risc. El risc es calcula setmanalment segons assistència, IPI i objectius.
+          Distribució d&apos;alumnes per nivell de seguiment i suport necessari.
         </p>
 
         {!donorReady ? (
@@ -559,7 +489,7 @@ export default function ImpactPortalPage() {
 
         <div style={{ textAlign: "center", marginTop: "2rem" }}>
           <button type="button" className="donor-evidence-btn" onClick={handleDownloadEvidence}>
-            Descarrega el paquet d'evidència complet (JSON)
+            Descarrega l&apos;informe d&apos;impacte
           </button>
         </div>
         </div>

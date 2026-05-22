@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Brain, ClipboardCheck, Globe, Search, Users2, X } from "lucide-react";
+import { BookOpen, Brain, Globe, Search, Users2, X } from "lucide-react";
 import { createFollowUpAssessment } from "../../api/assessments";
 import { listParticipants } from "../../api/participants";
 import { listPrograms } from "../../api/programs";
@@ -80,7 +80,7 @@ export default function SeguimentPage() {
         participant_id: participantId,
         program_id: programId,
         assessment_date: date,
-        period_label: "seguiment",
+        period_label: "avaluacio_trimestral",
         academic_score: scores.academic_score!,
         cognitive_score: scores.cognitive_score!,
         social_score: scores.social_score!,
@@ -88,7 +88,7 @@ export default function SeguimentPage() {
         notes: notes.trim() || undefined,
       }),
     onSuccess: () => {
-      toast.success("Seguiment registrat", "S'ha desat la prova de seguiment correctament.");
+      toast.success("Avaluació desada", "S'ha registrat l'avaluació trimestral de l'alumne.");
       qc.invalidateQueries({ queryKey: ["professional-dashboard"] });
       qc.invalidateQueries({ queryKey: ["participant-evolution"] });
       closeModal();
@@ -106,20 +106,15 @@ export default function SeguimentPage() {
   return (
     <div className="vol-page">
       <VolunteerPageHeader
-        title="Seguiment"
-        subtitle="Prova de seguiment trimestral: valora cada dimensió de 0 a 10 per mesurar l'evolució de l'alumne."
+        title="Avaluació trimestral"
+        subtitle="No és el registre de sessió diari. Aquí valores les 4 dimensions (0–10) en un moment concret del curs."
       />
 
-      <div className="vol-info-card" role="note">
-        <ClipboardCheck size={22} strokeWidth={2} className="vol-info-icon" aria-hidden />
-        <div>
-          <strong>Què és això?</strong>
-          <p>
-            És una avaluació estructurada (no una sessió diària). Tria el programa, prem{" "}
-            <strong>Avaluar</strong> a l'alumne i marca les quatre dimensions.
-          </p>
-        </div>
-      </div>
+      <p className="vol-hint-banner" role="note">
+        <strong>Funcionament:</strong> tria programa → prem <strong>Avaluar</strong> a l&apos;alumne → marca
+        acadèmic, cognitiu, social i integració → desa. L&apos;IPI es calcula automàticament i es veu a{" "}
+        <strong>Progrés</strong>.
+      </p>
 
       <div className="vol-filter-strip vol-filter-strip--compact">
         <PremiumSelect
@@ -146,13 +141,13 @@ export default function SeguimentPage() {
 
       {!programId ? (
         <p className="vol-hint-banner" role="status">
-          Selecciona un programa per veure els alumnes a avaluar.
+          Selecciona un programa per veure els alumnes.
         </p>
       ) : (
         <section className="vol-list-section" aria-labelledby="seg-list-heading">
           <div className="vol-list-section-head">
             <h2 id="seg-list-heading" className="vol-list-section-title">
-              Alumnes a avaluar
+              Alumnes del programa
             </h2>
             <span className="vol-list-count">{filtered.length}</span>
           </div>
@@ -192,7 +187,7 @@ export default function SeguimentPage() {
             <div className="vol-modal-header">
               <div>
                 <h2 id="seg-modal-title" className="vol-modal-title">
-                  Prova de seguiment
+                  Avaluació de dimensions
                 </h2>
                 <p className="vol-modal-sub">{participantName}</p>
               </div>
@@ -214,7 +209,7 @@ export default function SeguimentPage() {
               }}
             >
               <label className="premium-select-label" htmlFor="seg-date">
-                Data de l'avaluació
+                Data de l&apos;avaluació
               </label>
               <input
                 id="seg-date"
@@ -230,7 +225,7 @@ export default function SeguimentPage() {
                     <Icon size={16} strokeWidth={2} aria-hidden />
                     {label}
                   </legend>
-                  <div className="vol-score-grid" role="group" aria-label={`${label} 0 a 10`}>
+                  <div className="vol-score-grid" role="group" aria-label={`${label} de 0 a 10`}>
                     {Array.from({ length: 11 }, (_, n) => (
                       <button
                         key={n}
@@ -260,7 +255,7 @@ export default function SeguimentPage() {
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Comentaris sobre l'evolució…"
+                placeholder="Comentari breu sobre l'estat de l'alumne…"
               />
 
               {!allScoresSet && (
@@ -274,7 +269,7 @@ export default function SeguimentPage() {
                 className="vol-cta-primary"
                 disabled={!canSave || save.isPending}
               >
-                {save.isPending ? "Desant…" : "Desar seguiment"}
+                {save.isPending ? "Desant…" : "Desar avaluació"}
               </button>
             </form>
           </div>

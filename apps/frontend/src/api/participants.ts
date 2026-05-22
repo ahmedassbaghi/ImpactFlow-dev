@@ -115,6 +115,34 @@ export async function getParticipant(participantId: string): Promise<Participant
   return data;
 }
 
+export type SessionContext = {
+  has_previous: boolean;
+  baseline_ipi: number | null;
+  previous_ipi?: number | null;
+  previous_date?: string | null;
+  last_session_date?: string | null;
+  previous_dimensions?: Record<string, number | null>;
+  previous_dimensions_1_5?: Record<string, number | null>;
+  max_session_ipi_step?: number;
+};
+
+export async function getParticipantSessionContext(
+  participantId: string,
+  programId: string,
+  sessionDate?: string
+): Promise<SessionContext> {
+  const { data } = await apiClient.get<SessionContext>(
+    `/participants/${participantId}/session-context`,
+    {
+      params: {
+        program_id: programId,
+        ...(sessionDate ? { session_date: sessionDate } : {}),
+      },
+    }
+  );
+  return data;
+}
+
 export async function getParticipantEvolution(participantId: string, programId?: string) {
   const { data } = await apiClient.get<ParticipantEvolution>(
     `/participants/${participantId}/evolution`,

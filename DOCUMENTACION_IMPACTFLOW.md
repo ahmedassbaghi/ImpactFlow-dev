@@ -295,7 +295,10 @@ Organization ─┬─ School ─── Participant ─┬─ ProgramEnrollment 
 
 ## 6. Índice de Progreso Integral (IPI)
 
-**Implementación:** `apps/backend/app/algorithms/ipi.py`
+> **Documentación detallada (registro de sesión, corva d'aprenentatge, bonus voluntari, SROI, dosi de sessions):**  
+> [`docs/DOCUMENTACION_IPI_SROI.md`](docs/DOCUMENTACION_IPI_SROI.md)
+
+**Implementación:** `apps/backend/app/algorithms/ipi.py`, `apps/backend/app/algorithms/learning_curve.py`, `apps/backend/app/utils/participant_metrics.py`
 
 ### Dimensiones y pesos por defecto
 
@@ -367,6 +370,8 @@ Clustering en 4 dimensiones de baseline → etiquetas semánticas (ej. perfil ac
 Endpoint: `GET /participants/{id}/profile-cluster`.
 
 ### 7.5 `sroi_engine.py` + `monte_carlo_sroi.py`
+
+Fórmules, denominador, numerador, correcciones y dosi de sessions: [`docs/DOCUMENTACION_IPI_SROI.md` §4](docs/DOCUMENTACION_IPI_SROI.md#4-sroi-social-return-on-investment).
 
 **SROI Network 2012** adaptado a proxies catalanes:
 

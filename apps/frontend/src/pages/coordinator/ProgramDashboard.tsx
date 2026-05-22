@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import {
   getAnalyticsTrend, getCostEffectiveness, getCoordinatorDashboard,
-  getImpactStatement, getInterventionEffect, getIpiDistribution, getSessionQuality,
+  getImpactStatement, getInterventionEffect, getIpiDistribution, getPeriodSroi, getSessionQuality,
 } from "../../api/dashboard";
 import { BootstrapCIBadge } from "../../components/analytics/BootstrapCIBadge";
 import { EffectSizeCard } from "../../components/analytics/EffectSizeCard";
@@ -20,10 +20,18 @@ import { SignificanceIndicator } from "../../components/analytics/SignificanceIn
 import { ReportInsightsModal } from "../../components/reports/ReportInsightsModal";
 import { listPrograms } from "../../api/programs";
 import { generateReport } from "../../api/reports";
+import SROIFormulaExplainer from "../../components/sroi/SROIFormulaExplainer";
 
 const RISK_COLORS = ["#10b981", "#f59e0b", "#ef4444"];
 const DISTRIBUTION_COLORS = ["#22c55e", "#84cc16", "#f59e0b", "#fb7185", "#ef4444"];
-const DASHBOARD_RANGE_DAYS = 365;
+import {
+  COORDINATOR_PERIOD_DAYS,
+  COORDINATOR_DEFAULT_END_OFFSET,
+  COORDINATOR_DEFAULT_START_OFFSET,
+  computeCoordinatorPeriod,
+} from "../../utils/coordinatorPeriod";
+
+const DASHBOARD_RANGE_DAYS = COORDINATOR_PERIOD_DAYS;
 
 function InfoHint({ text }: { text: string }) {
   return (
@@ -102,11 +110,13 @@ function CeaSection({
   costEffectiveness,
   formatCurrency,
 }: {
-  costEffectiveness: ReturnType<typeof useMemo>;
+  costEffectiveness: any;
   formatCurrency: (v: number | null | undefined) => string;
 }) {
   const [open, setOpen] = useState(false);
-  const ce = costEffectiveness as any;
+  const ce = costEffectiveness;
+  const inv = ce?.period_investment;
+  const cmp = ce?.comparator_investment;
   return (
     <div className="dash-cea-wrap">
       <button className="dash-cea-toggle" onClick={() => setOpen((o) => !o)}>
@@ -115,6 +125,19 @@ function CeaSection({
         <InfoHint text="Relació entre recursos invertits i resultats de millora." />
         {open ? <ChevronUp size={13} strokeWidth={2} /> : <ChevronDown size={13} strokeWidth={2} />}
       </button>
+      {inv && (
+        <p className="dash-cost-auto" style={{ marginTop: "0.5rem" }}>
+          <strong>Cost del període:</strong> {formatCurrency(inv.total_cost_eur)} ·{" "}
+          <strong>{inv.n_sessions}</strong> sessions × {formatCurrency(inv.cost_per_session_eur)}/sessió
+          {cmp ? (
+            <>
+              {" "}
+              · <strong>Període anterior:</strong> {formatCurrency(cmp.total_cost_eur)} ({cmp.n_sessions}{" "}
+              sessions)
+            </>
+          ) : null}
+        </p>
+      )}
       {open && (
         <div className="dash-cea-grid">
           <div className="card kpi-card">
@@ -151,12 +174,10 @@ function CeaSection({
 
 export default function ProgramDashboardPage() {
   const [programInput, setProgramInput] = useState("");
-  const [startDayOffset, setStartDayOffset] = useState(DASHBOARD_RANGE_DAYS - 120);
-  const [endDayOffset, setEndDayOffset] = useState(DASHBOARD_RANGE_DAYS);
-  const [debouncedStartDayOffset, setDebouncedStartDayOffset] = useState(DASHBOARD_RANGE_DAYS - 120);
-  const [debouncedEndDayOffset, setDebouncedEndDayOffset] = useState(DASHBOARD_RANGE_DAYS);
-  const [periodCostEur, setPeriodCostEur] = useState("0");
-  const [comparatorCostEur, setComparatorCostEur] = useState("0");
+  const [startDayOffset, setStartDayOffset] = useState(COORDINATOR_DEFAULT_START_OFFSET);
+  const [endDayOffset, setEndDayOffset] = useState(COORDINATOR_DEFAULT_END_OFFSET);
+  const [debouncedStartDayOffset, setDebouncedStartDayOffset] = useState(COORDINATOR_DEFAULT_START_OFFSET);
+  const [debouncedEndDayOffset, setDebouncedEndDayOffset] = useState(COORDINATOR_DEFAULT_END_OFFSET);
   const [reportMessage, setReportMessage] = useState("");
   const [reportMessageType, setReportMessageType] = useState<"success" | "error" | "">("");
   const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
@@ -169,23 +190,16 @@ export default function ProgramDashboardPage() {
     return () => window.clearTimeout(timer);
   }, [startDayOffset, endDayOffset]);
 
-  const periodEndDate = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const periodStartDate = useMemo(() => {
-    const s = new Date(periodEndDate);
-    s.setDate(periodEndDate.getDate() - (DASHBOARD_RANGE_DAYS - debouncedStartDayOffset));
-    return s;
-  }, [periodEndDate, debouncedStartDayOffset]);
-  const periodEndDateByOffset = useMemo(() => {
-    const e = new Date(periodEndDate);
-    e.setDate(periodEndDate.getDate() - (DASHBOARD_RANGE_DAYS - debouncedEndDayOffset));
-    return e;
-  }, [periodEndDate, debouncedEndDayOffset]);
-
-  const periodStart = useMemo(() => periodStartDate.toISOString().slice(0, 10), [periodStartDate]);
-  const periodEnd = useMemo(() => periodEndDateByOffset.toISOString().slice(0, 10), [periodEndDateByOffset]);
-  const fmtStart = useMemo(() => periodStartDate.toLocaleDateString("ca-ES", { day:"2-digit", month:"short", year:"numeric" }), [periodStartDate]);
-  const fmtEnd = useMemo(() => periodEndDateByOffset.toLocaleDateString("ca-ES", { day:"2-digit", month:"short", year:"numeric" }), [periodEndDateByOffset]);
-  const selectedRangeDays = useMemo(() => Math.max(1, debouncedEndDayOffset - debouncedStartDayOffset + 1), [debouncedStartDayOffset, debouncedEndDayOffset]);
+  const {
+    periodStart,
+    periodEnd,
+    fmtStart,
+    fmtEnd,
+    selectedRangeDays,
+  } = useMemo(
+    () => computeCoordinatorPeriod(debouncedStartDayOffset, debouncedEndDayOffset),
+    [debouncedStartDayOffset, debouncedEndDayOffset],
+  );
   const trendMonths = useMemo(() => Math.max(1, Math.ceil(selectedRangeDays / 30)), [selectedRangeDays]);
 
   const { data, isLoading } = useQuery({
@@ -210,9 +224,18 @@ export default function ProgramDashboardPage() {
   const { data: interventionEffect } = useQuery({ queryKey: ["intervention-effect", selectedProgramId, periodStart, periodEnd], queryFn: () => getInterventionEffect(selectedProgramId, periodStart, periodEnd), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
   const { data: sessionQuality } = useQuery({ queryKey: ["session-quality", selectedProgramId, periodStart, periodEnd], queryFn: () => getSessionQuality(selectedProgramId, periodStart, periodEnd), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
 
-  const periodCostValue = Number(periodCostEur || 0);
-  const comparatorCostValue = Number(comparatorCostEur || 0);
-  const { data: costEffectiveness } = useQuery({ queryKey: ["cost-effectiveness", selectedProgramId, periodStart, periodEnd, periodCostValue, comparatorCostValue], queryFn: () => getCostEffectiveness(selectedProgramId, periodStart, periodEnd, periodCostValue, comparatorCostValue), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
+  const { data: costEffectiveness } = useQuery({
+    queryKey: ["cost-effectiveness", selectedProgramId, periodStart, periodEnd],
+    queryFn: () => getCostEffectiveness(selectedProgramId, periodStart, periodEnd),
+    enabled: !!selectedProgramId,
+    placeholderData: (prev) => prev,
+  });
+  const { data: periodSroi } = useQuery({
+    queryKey: ["period-sroi", selectedProgramId, periodStart, periodEnd],
+    queryFn: () => getPeriodSroi(selectedProgramId, periodStart, periodEnd),
+    enabled: !!selectedProgramId,
+    placeholderData: (prev) => prev,
+  });
 
   const reportMutation = useMutation({
     mutationFn: async (programId: string) => generateReport({ program_id: programId, report_type: "quarterly", period_start: periodStart, period_end: periodEnd, title: `Anàlisi ${periodStart} — ${periodEnd}` }),
@@ -277,7 +300,7 @@ export default function ProgramDashboardPage() {
 
       {/* ── 2. Controls ────────────────────────────────────────────────────── */}
       <div className="card dash-controls-card">
-        <div className="dash-controls-grid">
+        <div className="dash-controls-grid dash-controls-grid--compact">
           <div>
             <div className="form-label">Programa</div>
             <div className="combo-field">
@@ -288,7 +311,7 @@ export default function ProgramDashboardPage() {
             </div>
           </div>
 
-          <div>
+          <div className="dash-controls-period">
             <div className="form-label">Període analitzat</div>
             <div className="dash-range-block">
               <div className="dash-range-head">
@@ -304,23 +327,15 @@ export default function ProgramDashboardPage() {
               <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.78rem" }}>Finestra: {selectedRangeDays} dies</p>
             </div>
           </div>
-
-          <div>
-            <div className="form-label">
-              Cost del període (EUR)
-              <InfoHint text="Cost total del programa en el període seleccionat." />
-            </div>
-            <input type="number" className="form-input" min={0} step="100" value={periodCostEur} onChange={(e) => setPeriodCostEur(e.target.value)} placeholder="Ex: 18000" />
-          </div>
-
-          <div>
-            <div className="form-label">
-              Cost del comparador (EUR)
-              <InfoHint text="Cost del període anterior per calcular l'ICER." />
-            </div>
-            <input type="number" className="form-input" min={0} step="100" value={comparatorCostEur} onChange={(e) => setComparatorCostEur(e.target.value)} placeholder="Ex: 15000" />
-          </div>
         </div>
+        {costEffectiveness?.period_investment && (
+          <p className="dash-cost-auto" style={{ marginTop: "0.85rem" }}>
+            <strong>Inversió operativa del període</strong> (des de registres):{" "}
+            {formatCurrency(costEffectiveness.period_investment.total_cost_eur)} —{" "}
+            {costEffectiveness.period_investment.n_sessions} sessions registrades ×{" "}
+            {formatCurrency(costEffectiveness.period_investment.cost_per_session_eur)}/sessió
+          </p>
+        )}
         {reportMessage && (
           <p style={{ color: reportMessageType === "error" ? "var(--risk-high)" : "var(--risk-low)", margin: "0.6rem 0 0", fontSize: "0.84rem" }}>
             {reportMessage}
@@ -537,8 +552,49 @@ export default function ProgramDashboardPage() {
         </div>
       </DashSection>
 
-      {/* ── 7. Cost-efectivitat (desplegable) ─────────────────────────────── */}
-      <DashSection label="Eficiència">
+      {/* ── 7. SROI i cost-efectivitat ─────────────────────────────────────── */}
+      <DashSection label="SROI i eficiència">
+        {periodSroi && (
+          <div className="card" style={{ marginBottom: "0.75rem" }}>
+            <div className="dash-sroi-hero">
+              <div>
+                <div className="kpi-label">SROI del període</div>
+                <div className="dash-sroi-ratio">{periodSroi.sroi_ratio.toFixed(2)}×</div>
+                <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
+                  {periodSroi.sroi_statement}
+                </p>
+              </div>
+              <div className="dash-kpi-row" style={{ flex: 1, minWidth: 280 }}>
+                <div className="card kpi-card">
+                  <div className="kpi-label">Valor social estimat</div>
+                  <div className="metric-value" style={{ fontSize: "1.35rem" }}>
+                    {formatCurrency(periodSroi.total_social_value_eur)}
+                  </div>
+                </div>
+                <div className="card kpi-card">
+                  <div className="kpi-label">Inversió (sessions)</div>
+                  <div className="metric-value" style={{ fontSize: "1.35rem" }}>
+                    {formatCurrency(periodSroi.total_investment_eur)}
+                  </div>
+                </div>
+                <div className="card kpi-card">
+                  <div className="kpi-label">€ per cada €1</div>
+                  <div className="metric-value" style={{ fontSize: "1.35rem" }}>
+                    {periodSroi.total_investment_eur > 0
+                      ? (periodSroi.total_social_value_eur / periodSroi.total_investment_eur).toFixed(2)
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {periodSroi.formula_explanation && (
+              <SROIFormulaExplainer
+                formula={periodSroi.formula_explanation}
+                formatCurrency={formatCurrency}
+              />
+            )}
+          </div>
+        )}
         <CeaSection costEffectiveness={costEffectiveness} formatCurrency={formatCurrency} />
       </DashSection>
 

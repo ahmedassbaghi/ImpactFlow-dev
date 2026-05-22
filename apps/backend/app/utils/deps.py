@@ -54,6 +54,11 @@ async def get_current_user(
         if settings.auth_bypass:
             return await _get_default_user(db)
         raise credentials_exception
+    if not settings.auth_bypass and (not user.is_active or user.role == "pending"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Compte pendent d'activació",
+        )
     return user
 
 

@@ -5,6 +5,7 @@ export type User = {
   id: string;
   email: string;
   full_name: string;
+  username?: string | null;
   role: string;
   is_active: boolean;
 };
@@ -33,5 +34,13 @@ export async function setUserAssignments(userId: string, participantIds: string[
   const { data } = await apiClient.put(`/users/${userId}/participants`, {
     participant_ids: participantIds,
   });
+  return data;
+}
+
+export async function activateUser(
+  userId: string,
+  payload: { role: "coordinator" | "professional"; is_active?: boolean }
+) {
+  const { data } = await apiClient.patch<User>(`/users/${userId}/activate`, payload);
   return data;
 }
