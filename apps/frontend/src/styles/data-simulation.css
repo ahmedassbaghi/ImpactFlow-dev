@@ -48,6 +48,12 @@
   gap: 0.85rem;
 }
 
+.sc-header__brand .if-logo__img {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.2rem 0.4rem;
+}
+
 .sc-header__icon {
   width: 44px;
   height: 44px;

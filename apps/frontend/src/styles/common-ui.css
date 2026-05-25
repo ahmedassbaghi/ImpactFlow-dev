@@ -549,6 +549,14 @@ html[data-theme="dark"] .cmdk-item.is-active {
 }
 
 /* ─── Inter-rater Reliability widget ─────────────────────────────── */
+.irr-hint {
+  margin: 0;
+  padding: 10px 16px 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .irr-card {
   display: grid;
   grid-template-columns: auto 1fr;

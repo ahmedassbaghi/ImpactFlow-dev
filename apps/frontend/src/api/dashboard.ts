@@ -323,6 +323,10 @@ export async function getInterRaterReliability(programId: string) {
     n_raters: number;
     n_observations: number;
     bias_alerts: Array<{ rater_id: string; bias_type: string; dimension: string }>;
+    icc_computable?: boolean;
+    overlap_targets?: number;
+    overlap_by_dimension?: Record<string, number>;
+    message?: string;
   };
 }
 

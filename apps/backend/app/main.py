@@ -3204,13 +3204,16 @@ async def analytics_dose_response(
         b = b_q.scalar_one_or_none()
         if b is None:
             continue
-        academic = _dim_avg([b.reading_level, b.math_level, b.comprehension_level])
-        cognitive = _dim_avg([b.attention_level, b.memory_level, b.autonomy_level])
-        social = _dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation])
-        integration = _dim_avg([b.language_fluency, b.cultural_adaptation])
-        if any(x is None for x in [academic, cognitive, social, integration]):
-            continue
-        baseline_ipi = academic * 0.30 + cognitive * 0.20 + social * 0.30 + integration * 0.20
+        if b.ipi_baseline is not None:
+            baseline_ipi = float(b.ipi_baseline)
+        else:
+            academic = _dim_avg([b.reading_level, b.math_level, b.comprehension_level])
+            cognitive = _dim_avg([b.attention_level, b.memory_level, b.autonomy_level])
+            social = _dim_avg([b.peer_interaction, b.group_work, b.emotional_regulation])
+            integration = _dim_avg([b.language_fluency, b.cultural_adaptation])
+            if any(x is None for x in [academic, cognitive, social, integration]):
+                continue
+            baseline_ipi = academic * 0.30 + cognitive * 0.20 + social * 0.30 + integration * 0.20
 
         latest_q = await db.execute(
             select(PeriodicAssessment.ipi_score)
@@ -3250,13 +3253,16 @@ async def analytics_dose_response(
         if dose <= 0:
             continue
 
-        gain = float(latest) - float(baseline_ipi)
+        raw_gain = float(latest) - float(baseline_ipi)
+        max_gain = max(0.0, 100.0 - float(baseline_ipi))
+        gain = max(0.0, min(raw_gain, max_gain))
         doses.append(dose)
-        gains.append(max(0.0, gain))
+        gains.append(gain)
 
+    dose_unit = "sessions" if dose_type == "sessions" else "hores"
     return {
         "dose_type": dose_type,
-        **fit_dose_response(doses, gains),
+        **fit_dose_response(doses, gains, dose_unit=dose_unit),
     }
 
 

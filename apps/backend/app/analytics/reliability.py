@@ -33,6 +33,15 @@ def _mean(vals: list[float]) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
+def _overlap_target_count(ratings: list[list[float | None]]) -> int:
+    """Participants (rows) rated by at least two distinct professionals."""
+    n = 0
+    for row in ratings:
+        if sum(1 for v in row if v is not None) >= 2:
+            n += 1
+    return n
+
+
 def _icc_two_way_random(ratings: list[list[float | None]]) -> float:
     """ICC(2,1) — two-way random, single measures.
 
@@ -125,6 +134,9 @@ async def compute_inter_rater_reliability(program_id: str, db: AsyncSession) -> 
             "n_raters": 0,
             "n_observations": 0,
             "bias_alerts": [],
+            "icc_computable": False,
+            "overlap_targets": 0,
+            "message": "No hi ha sessions registrades al programa.",
         }
 
     obs_q = await db.execute(
@@ -142,6 +154,9 @@ async def compute_inter_rater_reliability(program_id: str, db: AsyncSession) -> 
             "n_raters": 0,
             "n_observations": 0,
             "bias_alerts": [],
+            "icc_computable": False,
+            "overlap_targets": 0,
+            "message": "No hi ha observacions de sessió per calcular la concordança.",
         }
 
     # Map session_id → professional_id
@@ -177,6 +192,7 @@ async def compute_inter_rater_reliability(program_id: str, db: AsyncSession) -> 
     rater_list = sorted(all_raters)
 
     icc_by_dim: dict[str, float] = {}
+    overlap_by_dim: dict[str, int] = {}
     bias_alerts: list[dict] = []
 
     for dim in _DIMS:
@@ -191,6 +207,7 @@ async def compute_inter_rater_reliability(program_id: str, db: AsyncSession) -> 
             ratings_matrix.append(row)
 
         icc_by_dim[dim] = _icc_two_way_random(ratings_matrix)
+        overlap_by_dim[dim] = _overlap_target_count(ratings_matrix)
 
         # Bias detection per rater per dimension
         for r_id in rater_list:
@@ -199,6 +216,23 @@ async def compute_inter_rater_reliability(program_id: str, db: AsyncSession) -> 
 
     valid_iccs = [v for v in icc_by_dim.values() if v > 0]
     overall_icc = round(_mean(valid_iccs), 4) if valid_iccs else 0.0
+    overlap_targets = max(overlap_by_dim.values()) if overlap_by_dim else 0
+
+    if len(all_raters) < 2:
+        message = (
+            "Cal almenys 2 professionals amb observacions al programa. "
+            "Amb un sol avaluador, l'ICC no es pot mesurar."
+        )
+        icc_computable = False
+    elif overlap_targets < 3:
+        message = (
+            f"Només {overlap_targets} infant(s) avaluat(s) per dos professionals diferents "
+            f"(en calen ≥3). Assigna solapament o sessions creuades entre voluntaris."
+        )
+        icc_computable = False
+    else:
+        message = ""
+        icc_computable = overall_icc > 0
 
     return {
         "overall_icc": overall_icc,
@@ -207,4 +241,8 @@ async def compute_inter_rater_reliability(program_id: str, db: AsyncSession) -> 
         "n_raters": len(all_raters),
         "n_observations": len(observations),
         "bias_alerts": bias_alerts,
+        "icc_computable": icc_computable,
+        "overlap_targets": overlap_targets,
+        "overlap_by_dimension": overlap_by_dim,
+        "message": message,
     }

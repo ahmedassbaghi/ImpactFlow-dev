@@ -768,6 +768,11 @@ async def run_session_simulation(
         base_ipi = float(baseline.ipi_baseline or 0)
         prog_id = baseline.program_id
         prof_id = assign_map.get(participant.id) or professionals[0].id
+        prof_ids = [p.id for p in professionals]
+        secondary_prof_id: str | None = None
+        if len(prof_ids) >= 2:
+            primary_idx = prof_ids.index(prof_id) if prof_id in prof_ids else 0
+            secondary_prof_id = prof_ids[(primary_idx + 1) % len(prof_ids)]
 
         # Track per-profile IPI data
         result.profile_ipi_start.setdefault(profile, []).append(base_ipi)
@@ -930,9 +935,14 @@ async def run_session_simulation(
                 weeks_in_program=max(4, (today - participant.enrollment_date).days // 7),
             )
 
+            # Sessions creuades: un altre voluntari avalua el mateix infant (ICC inter-avaluador)
+            session_prof_id = prof_id
+            if secondary_prof_id and step > 0 and step % 4 == 0:
+                session_prof_id = secondary_prof_id
+
             sess = Session(
                 program_id=prog_id,
-                professional_id=prof_id,
+                professional_id=session_prof_id,
                 session_date=session_date,
                 session_type="individual",
                 duration_minutes=random.choice([45, 50, 55, 60]),
@@ -976,7 +986,7 @@ async def run_session_simulation(
             )
             same_day = list(same_day_q.scalars().all())
             pa_fields = dict(
-                assessed_by=prof_id,
+                assessed_by=session_prof_id,
                 period_label=SIMULATION_PERIOD_LABEL,
                 reading_level=rl,
                 math_level=ml,

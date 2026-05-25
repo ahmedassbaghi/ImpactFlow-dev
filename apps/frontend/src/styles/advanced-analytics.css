@@ -83,6 +83,159 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
+/* Targeta amb panell d'info lateral (discret) */
+.adv-card--with-info {
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0;
+  overflow: hidden;
+}
+
+.adv-card--with-info.adv-sroi-summary {
+  grid-column: 1 / -1;
+}
+
+.adv-card-main {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.adv-card--with-info .adv-card-loading,
+.adv-card--with-info .adv-card-error {
+  min-height: 240px;
+  padding: 24px;
+}
+
+.adv-chart-info {
+  position: relative;
+  border-left: 1px solid var(--border);
+  align-self: stretch;
+}
+
+.adv-chart-info-trigger {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 100%;
+  min-height: 4.5rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-2) 50%, transparent);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.adv-chart-info-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.adv-chart-info-trigger::marker {
+  content: "";
+}
+
+.adv-chart-info-trigger:hover {
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+
+.adv-chart-info-trigger:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: -2px;
+}
+
+.adv-chart-info[open] .adv-chart-info-trigger {
+  color: var(--brand-600, var(--brand-500));
+  background: var(--surface-2);
+}
+
+.adv-chart-info-panel {
+  display: none;
+}
+
+.adv-chart-info[open] .adv-chart-info-panel {
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2.1rem;
+  width: min(248px, calc(100vw - 4rem));
+  padding: 14px 14px 16px;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border);
+  box-shadow: -6px 0 16px rgba(15, 23, 42, 0.06);
+  overflow-y: auto;
+  z-index: 3;
+}
+
+.adv-chart-info-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.adv-chart-info-body {
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.adv-chart-info-body p {
+  margin: 0 0 0.55rem;
+}
+
+.adv-chart-info-body p:last-child {
+  margin-bottom: 0;
+}
+
+.adv-irr-wrap .card {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  overflow: visible;
+}
+
+.adv-irr-wrap .adv-card-main {
+  padding: 0;
+}
+
+@media (max-width: 640px) {
+  .adv-chart-info[open] .adv-chart-info-panel {
+    right: 0;
+    top: auto;
+    bottom: 2.1rem;
+    left: 0;
+    width: auto;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.06);
+  }
+
+  .adv-chart-info-trigger {
+    width: 100%;
+    min-height: 2.25rem;
+    height: auto;
+  }
+
+  .adv-card--with-info {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+
+  .adv-chart-info {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
 .adv-card-loading,
 .adv-card-error {
   align-items: center;
@@ -255,6 +408,30 @@
 .adv-did-pvalue { margin-top: 6px; }
 
 /* Dose-Response */
+.adv-dose-plain {
+  margin: 0;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.adv-dose-plain strong {
+  color: var(--text-primary);
+}
+
+.adv-interpretation--dose p {
+  margin: 0 0 0.65rem;
+  line-height: 1.55;
+}
+
+.adv-interpretation--dose p:last-child {
+  margin-bottom: 0;
+}
+
 .adv-dose-controls {
   display: flex;
   gap: 6px;

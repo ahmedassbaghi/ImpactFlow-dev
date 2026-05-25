@@ -14,6 +14,7 @@ import "./styles/voluntari-ui.css";
 import "./styles/donor-ui.css";
 import "./styles/dimension-evolution.css";
 import "./styles/auth-mobile.css";
+import "./styles/impactflow-brand.css";
 import "./styles/coordinator-ui.css";
 import "./styles/sroi-formula.css";
 import "./styles/data-simulation.css";

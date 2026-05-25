@@ -26,6 +26,7 @@ import { CommandPalette } from "../common/CommandPalette";
 import { NotificationBell } from "../common/NotificationBell";
 import { PageTransition } from "../common/PageTransition";
 import { avatarStyle, avatarInitial } from "../../utils/hueAvatar";
+import ImpactFlowLogo from "../brand/ImpactFlowLogo";
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   admin:        { label: "Admin",        color: "#c45a08", bg: "#fff4eb" },
@@ -102,11 +103,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ── Top navigation ── */}
       <header className="topnav">
         {/* Brand */}
-        <Link to="/" className="topnav-brand">
-          <div className="topnav-brand-icon">
-            <BarChart3 size={16} strokeWidth={2.5} />
-          </div>
-          <span className="topnav-brand-name">ImpactFlow</span>
+        <Link to="/" className="topnav-brand" aria-label="ImpactFlow — Inici">
+          <ImpactFlowLogo variant="lockup" height={30} />
         </Link>
 
         {/* Nav links */}

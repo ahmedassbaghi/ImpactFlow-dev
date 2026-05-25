@@ -171,6 +171,10 @@ label {
   z-index: 100;
 }
 
+.topnav-brand .if-logo {
+  flex-shrink: 0;
+}
+
 .topnav-brand {
   display: flex;
   align-items: center;

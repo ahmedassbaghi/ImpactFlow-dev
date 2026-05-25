@@ -83,6 +83,7 @@ export function InterRaterReliabilityCard({ programId }: { programId: string }) 
   const interp = data.icc_interpretation || "—";
   const color = INTERP_COLOR[interp] ?? "#6b7280";
   const overall = Number.isFinite(data.overall_icc) ? data.overall_icc : 0;
+  const showIccHint = Boolean(data.message);
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -93,6 +94,12 @@ export function InterRaterReliabilityCard({ programId }: { programId: string }) 
           Concordança entre professionals
         </span>
       </div>
+
+      {showIccHint && data.message && (
+        <p className="irr-hint" role="status">
+          {data.message}
+        </p>
+      )}
 
       <div className="irr-card">
         <div className="irr-gauge">

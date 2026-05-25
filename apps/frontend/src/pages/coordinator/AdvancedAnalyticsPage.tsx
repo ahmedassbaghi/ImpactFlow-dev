@@ -23,6 +23,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ComposedChart,
   Line,
   LineChart,
   ReferenceLine,
@@ -32,7 +33,6 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from "recharts";
 import { listPrograms } from "../../api/programs";
 import { listSchools } from "../../api/schools";
@@ -46,8 +46,55 @@ import {
   type DimensionEffect,
   type ProgramSroiSnapshot,
 } from "../../api/advanced";
+import { AdvCardWithInfo } from "../../components/analytics/AdvCardWithInfo";
 import { InterRaterReliabilityCard } from "../../components/analytics/InterRaterReliabilityCard";
 import SROIFormulaExplainer from "../../components/sroi/SROIFormulaExplainer";
+
+const ADV_INFO = {
+  dimensionEffects: (
+    <>
+      <p>Compara el <strong>punt de partida</strong> i el <strong>nivell actual</strong> de cada dimensió de l&apos;IPI (acadèmic, cognitiu, social, integració).</p>
+      <p>El nombre <strong>Cohen&apos;s d</strong> indica la mida del canvi: &gt;0,2 petit, &gt;0,5 moderat, &gt;0,8 gran (referència Hattie).</p>
+    </>
+  ),
+  doseResponse: (
+    <>
+      <p>
+        L&apos;<strong>IPI</strong> (Índex de Progrés Integral) és la nota del programa de 0 a 100.
+        Aquest gràfic <em>no</em> mostra la nota final: mostra quant ha <strong>pujat</strong> des de
+        l&apos;entrada.
+      </p>
+      <p>
+        <strong>Horitzontal:</strong> sessions o hores totals. <strong>Vertical:</strong> pujada en
+        l&apos;IPI (ex.: +20 = ha pujat 20 punts en l&apos;índex).
+      </p>
+    </>
+  ),
+  sroi: (
+    <>
+      <p>Resumeix el <strong>retorn social</strong> del període: beneficis monetitzats (famílies, serveis públics, integració, hores de suport) dividits pel <strong>cost en efectiu</strong> del programa.</p>
+      <p>Utilitza les mateixes dades que el dashboard del coordinador per al període seleccionat.</p>
+    </>
+  ),
+  monteCarlo: (
+    <>
+      <p>Repeteix el càlcul SROI <strong>5.000 vegades</strong> variant lleugerament l&apos;IPI, les sessions i el cost per veure l&apos;interval de resultats possibles.</p>
+      <p>La distribució indica la probabilitat que el programa superi 1× o 2× de retorn social.</p>
+    </>
+  ),
+  anomalies: (
+    <>
+      <p>Revisa la <strong>trajectòria IPI</strong> de cada infant al llarg del temps i marca patrons inusuals: estancament, regressió o salt fort.</p>
+      <p>Serveix per prioritzar seguiment; no substitueix el criteri del coordinador.</p>
+    </>
+  ),
+  irr: (
+    <>
+      <p>Mesura si <strong>diferents voluntaris</strong> puntuen de forma similar quan acompanyen els mateixos infants (ICC).</p>
+      <p>Cal que almenys dos professionals tinguin observacions sobre infants comuns; amb un sol avaluador el valor serà 0.</p>
+    </>
+  ),
+} as const;
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function monthsAgoISO(n: number) {
@@ -107,13 +154,19 @@ function DimensionEffectsCard({ programId }: { programId: string }) {
     enabled: !!programId,
   });
 
-  if (isLoading || !data) return <div className="adv-card adv-card-loading">Calculant efectes…</div>;
+  if (isLoading || !data) {
+    return (
+      <AdvCardWithInfo infoTitle="Efectes per dimensió" info={ADV_INFO.dimensionEffects}>
+        <div className="adv-card-loading">Calculant efectes…</div>
+      </AdvCardWithInfo>
+    );
+  }
 
   const dims = ["academic", "cognitive", "social", "integration"] as const;
   const maxAbs = Math.max(0.5, ...dims.map((d) => Math.abs(data.dimensions[d].dz ?? 0)));
 
   return (
-    <div className="adv-card">
+    <AdvCardWithInfo infoTitle="Efectes per dimensió" info={ADV_INFO.dimensionEffects}>
       <SectionHeader
         icon={Sparkles}
         title="Efectes per dimensió (Cohen's d)"
@@ -197,7 +250,7 @@ function DimensionEffectsCard({ programId }: { programId: string }) {
         <span><span className="adv-dim-tag adv-dim-tag--good">gran+</span> ≥0.6</span>
       </div>
       <div className="adv-methodology">{data.methodology}</div>
-    </div>
+    </AdvCardWithInfo>
   );
 }
 
@@ -210,16 +263,44 @@ function DoseResponseCard({ programId }: { programId: string }) {
     enabled: !!programId,
   });
 
-  if (isLoading || !data) return <div className="adv-card adv-card-loading">Ajustant corba…</div>;
+  if (isLoading || !data) {
+    return (
+      <AdvCardWithInfo infoTitle="Corba dosi-resposta" info={ADV_INFO.doseResponse}>
+        <div className="adv-card-loading">Ajustant corba…</div>
+      </AdvCardWithInfo>
+    );
+  }
+
+  const hasCurve = (data.curve_points?.length ?? 0) > 1;
+  const maxDose = Math.max(
+    data.optimal_dose_90pct ?? 0,
+    ...(data.observed_points?.map((p) => p.dose) ?? [0]),
+    ...(data.curve_points?.map((p) => p.dose) ?? [0]),
+    1
+  );
+  const maxGain = Math.max(
+    data.vmax ?? 0,
+    ...(data.observed_points?.map((p) => p.gain) ?? [0]),
+    ...(data.curve_points?.map((p) => p.gain) ?? [0]),
+    1
+  );
 
   return (
-    <div className="adv-card">
+    <AdvCardWithInfo infoTitle="Corba dosi-resposta" info={ADV_INFO.doseResponse}>
       <SectionHeader
         icon={Gauge}
         title="Corba dosi-resposta"
-        subtitle="Per participant: sessions o hores registrades vs guany IPI. Complementa el model SROI (4 sess./infant/mes = referència)."
+        subtitle="Relació entre quant suport rep cada infant i quant millora l'IPI."
         badge={data.r_squared !== null ? <span className="adv-badge-info">R² = {data.r_squared.toFixed(2)}</span> : undefined}
       />
+
+      <p className="adv-dose-plain">
+        <strong>Què és l&apos;IPI?</strong> L&apos;Índex de Progrés Integral del programa (nota 0–100).
+        <br />
+        <strong>Què mesura el gràfic?</strong> Només la <strong>pujada</strong> d&apos;aquest índex, no la nota final.
+        <br />
+        <em>Exemple:</em> entra amb IPI 40 → puja +15 en l&apos;índex → IPI actual 55. No és «115» ni «punts de lliga».
+      </p>
 
       <div className="adv-dose-controls">
         <button
@@ -245,74 +326,118 @@ function DoseResponseCard({ programId }: { programId: string }) {
         <>
           <div className="adv-dose-headline-row">
             <div className="adv-dose-stat">
-              <div className="adv-dose-stat-label">Sostre (Vmax)</div>
-              <div className="adv-dose-stat-value">{data.vmax!.toFixed(1)}</div>
-              <div className="adv-dose-stat-unit">punts IPI</div>
+              <div className="adv-dose-stat-label">Pujada màxima en l&apos;IPI</div>
+              <div className="adv-dose-stat-value">+{data.vmax!.toFixed(0)}</div>
+              <div className="adv-dose-stat-unit">en l&apos;índex (respecte l&apos;entrada)</div>
             </div>
             <div className="adv-dose-stat">
-              <div className="adv-dose-stat-label">Mitja saturació (K)</div>
-              <div className="adv-dose-stat-value">{data.k_half!.toFixed(1)}</div>
-              <div className="adv-dose-stat-unit">{doseType === "sessions" ? "sessions" : "hores"}</div>
+              <div className="adv-dose-stat-label">Meitat d&apos;aquesta pujada</div>
+              <div className="adv-dose-stat-value">~{data.k_half!.toFixed(0)}</div>
+              <div className="adv-dose-stat-unit">
+                {doseType === "sessions" ? "sessions acumulades" : "hores acumulades"}
+              </div>
             </div>
             <div className="adv-dose-stat highlight">
-              <div className="adv-dose-stat-label">Òptim (90% Vmax)</div>
-              <div className="adv-dose-stat-value">{data.optimal_dose_90pct!.toFixed(0)}</div>
-              <div className="adv-dose-stat-unit">{doseType === "sessions" ? "sessions" : "hores"}</div>
+              <div className="adv-dose-stat-label">90% de la pujada (referència)</div>
+              <div className="adv-dose-stat-value">~{data.optimal_dose_90pct!.toFixed(0)}</div>
+              <div className="adv-dose-stat-unit">
+                {doseType === "sessions" ? "sessions (no és IPI)" : "hores (no és IPI)"}
+              </div>
             </div>
           </div>
 
-          <ResponsiveContainer width="100%" height={250}>
-            <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <ComposedChart margin={{ top: 12, right: 16, left: 4, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis
                 dataKey="dose"
                 type="number"
+                domain={[0, Math.ceil(maxDose * 1.05)]}
                 tick={{ fontSize: 11 }}
                 label={{
                   value: doseType === "sessions" ? "Sessions" : "Hores",
                   position: "insideBottom",
-                  offset: -2,
+                  offset: -4,
                   style: { fontSize: 11, fill: "var(--text-muted)" },
                 }}
               />
               <YAxis
                 type="number"
+                domain={[0, Math.ceil(maxGain * 1.12)]}
                 tick={{ fontSize: 11 }}
+                width={36}
                 label={{
-                  value: "Guany IPI",
+                  value: "Pujada IPI",
                   angle: -90,
                   position: "insideLeft",
+                  offset: 8,
                   style: { fontSize: 11, fill: "var(--text-muted)" },
                 }}
               />
-              <ZAxis range={[40, 40]} />
-              <Tooltip />
-              <ReferenceLine
-                x={data.optimal_dose_90pct!}
-                stroke="var(--brand-500)"
-                strokeDasharray="4 4"
-                label={{ value: "Òptim", position: "top", fontSize: 10, fill: "var(--brand-700)" }}
+              <Tooltip
+                formatter={(value: number, name: string) => {
+                  if (typeof value !== "number") return [value, name];
+                  if (name === "Observat" || name === "Corba ajustada") {
+                    return [
+                      `+${value.toFixed(1)} en l'Índex de Progrés Integral (pujada, no nota final)`,
+                      name,
+                    ];
+                  }
+                  return [value.toFixed(1), name];
+                }}
+                labelFormatter={(dose) =>
+                  `${doseType === "sessions" ? "Sessions totals" : "Hores totals"}: ${dose}`
+                }
               />
+              {hasCurve && (
+                <Line
+                  type="monotone"
+                  data={data.curve_points}
+                  dataKey="gain"
+                  stroke="var(--brand-700)"
+                  strokeWidth={2.5}
+                  dot={false}
+                  name="Corba ajustada"
+                  isAnimationActive={false}
+                />
+              )}
               <Scatter
                 name="Observat"
                 data={data.observed_points}
+                dataKey="gain"
                 fill="var(--brand-500)"
-                fillOpacity={0.6}
+                fillOpacity={0.85}
               />
-              <Scatter
-                name="Corba ajustada"
-                data={data.curve_points}
-                line={{ stroke: "var(--brand-700)", strokeWidth: 2 }}
-                shape={() => <></>}
-              />
-            </ScatterChart>
+              {data.optimal_dose_90pct != null && data.optimal_dose_90pct <= maxDose * 1.05 && (
+                <ReferenceLine
+                  x={data.optimal_dose_90pct}
+                  stroke="var(--narinan, #f58220)"
+                  strokeDasharray="4 4"
+                  label={{ value: "Òptim 90%", position: "top", fontSize: 10, fill: "var(--brand-700)" }}
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
+          {!hasCurve && (
+            <p className="adv-warning" style={{ marginTop: "0.5rem" }}>
+              No hi ha prou punts observats per dibuixar la corba (cal n≥4 participants amb sessions i IPI).
+            </p>
+          )}
 
-          <div className="adv-interpretation">{data.interpretation}</div>
+          <div className="adv-interpretation adv-interpretation--dose">
+            {data.interpretation_plain ? (
+              <>
+                <p>{data.interpretation_plain}</p>
+                {data.interpretation_dose && <p>{data.interpretation_dose}</p>}
+              </>
+            ) : (
+              <p>{data.interpretation}</p>
+            )}
+          </div>
         </>
       )}
       <div className="adv-methodology">Model: {data.model}</div>
-    </div>
+    </AdvCardWithInfo>
   );
 }
 
@@ -334,12 +459,18 @@ function SROIModelSummaryCard({
     enabled: !!programId,
   });
 
-  if (isLoading) return <div className="adv-card adv-card-loading adv-sroi-summary">Carregant SROI…</div>;
+  if (isLoading) {
+    return (
+      <AdvCardWithInfo infoTitle="Model SROI" info={ADV_INFO.sroi} className="adv-sroi-summary">
+        <div className="adv-card-loading">Carregant SROI…</div>
+      </AdvCardWithInfo>
+    );
+  }
   if (isError || !data) {
     return (
-      <div className="adv-card adv-card-error adv-sroi-summary">
-        No s&apos;ha pogut carregar el model SROI del programa.
-      </div>
+      <AdvCardWithInfo infoTitle="Model SROI" info={ADV_INFO.sroi} className="adv-sroi-summary">
+        <div className="adv-card-error">No s&apos;ha pogut carregar el model SROI del programa.</div>
+      </AdvCardWithInfo>
     );
   }
 
@@ -347,7 +478,7 @@ function SROIModelSummaryCard({
   const sens = data.sensitivity_analysis;
 
   return (
-    <div className="adv-card adv-sroi-summary">
+    <AdvCardWithInfo infoTitle="Model SROI" info={ADV_INFO.sroi} className="adv-sroi-summary">
       <SectionHeader
         icon={Calculator}
         title="Model SROI del període"
@@ -403,7 +534,7 @@ function SROIModelSummaryCard({
       {data.formula_explanation && (
         <SROIFormulaExplainer formula={data.formula_explanation} formatCurrency={formatEur} />
       )}
-    </div>
+    </AdvCardWithInfo>
   );
 }
 
@@ -441,24 +572,30 @@ function MonteCarloSROICard({
 
   if (!metrics || autoCost <= 0) {
     return (
-      <div className="adv-card">
+      <AdvCardWithInfo infoTitle="Monte Carlo SROI" info={ADV_INFO.monteCarlo}>
         <SectionHeader
           icon={Dices}
           title="SROI amb incertesa (Monte Carlo)"
           subtitle="Cal registres de sessions i cost operatiu per simular."
         />
         <p className="adv-warning">Encara no hi ha prou dades de sessions per a la simulació.</p>
-      </div>
+      </AdvCardWithInfo>
     );
   }
 
-  if (isLoading || !data) return <div className="adv-card adv-card-loading">Simulant…</div>;
+  if (isLoading || !data) {
+    return (
+      <AdvCardWithInfo infoTitle="Monte Carlo SROI" info={ADV_INFO.monteCarlo}>
+        <div className="adv-card-loading">Simulant…</div>
+      </AdvCardWithInfo>
+    );
+  }
 
   const chartData = data.distribution_bins.map((b) => ({ sroi: b.x, freq: b.count }));
   const detRatio = metrics.sroi_ratio;
 
   return (
-    <div className="adv-card">
+    <AdvCardWithInfo infoTitle="Monte Carlo SROI" info={ADV_INFO.monteCarlo}>
       <SectionHeader
         icon={Dices}
         title="SROI amb incertesa (Monte Carlo)"
@@ -580,7 +717,7 @@ function MonteCarloSROICard({
 
       <div className="adv-interpretation">{data.interpretation}</div>
       {data.methodology && <div className="adv-methodology">{data.methodology}</div>}
-    </div>
+    </AdvCardWithInfo>
   );
 }
 
@@ -593,7 +730,13 @@ function AnomalyCard({ programId }: { programId: string }) {
   });
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  if (isLoading || !data) return <div className="adv-card adv-card-loading">Detectant anomalies…</div>;
+  if (isLoading || !data) {
+    return (
+      <AdvCardWithInfo infoTitle="Anomalies de trajectòria" info={ADV_INFO.anomalies}>
+        <div className="adv-card-loading">Detectant anomalies…</div>
+      </AdvCardWithInfo>
+    );
+  }
 
   const ICONS = {
     plateau: Activity,
@@ -612,7 +755,7 @@ function AnomalyCard({ programId }: { programId: string }) {
   } as const;
 
   return (
-    <div className="adv-card">
+    <AdvCardWithInfo infoTitle="Anomalies de trajectòria" info={ADV_INFO.anomalies}>
       <SectionHeader
         icon={Sparkles}
         title="Detecció d'anomalies en trajectòries"
@@ -732,7 +875,7 @@ function AnomalyCard({ programId }: { programId: string }) {
         </div>
       )}
       <div className="adv-methodology">{data.methodology}</div>
-    </div>
+    </AdvCardWithInfo>
   );
 }
 
@@ -846,7 +989,9 @@ export default function AdvancedAnalyticsPage() {
             periodLabel={periodLabel}
           />
           <DimensionEffectsCard programId={programId} />
-          <InterRaterReliabilityCard programId={programId} />
+          <AdvCardWithInfo infoTitle="Fiabilitat inter-avaluador" info={ADV_INFO.irr} className="adv-irr-wrap">
+            <InterRaterReliabilityCard programId={programId} />
+          </AdvCardWithInfo>
           <DoseResponseCard programId={programId} />
           <MonteCarloSROICard
             programId={programId}

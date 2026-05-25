@@ -29,6 +29,7 @@ import {
   type SimulationResult,
 } from "../../api/simulation";
 import { toast } from "../../stores/toastStore";
+import ImpactFlowLogo from "../../components/brand/ImpactFlowLogo";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -481,10 +482,10 @@ export default function DataSimulationPage() {
       {/* ── HEADER ── */}
       <div className="sc-header">
         <div className="sc-header__left">
-          <div className="sc-header__icon"><FlaskConical size={22} /></div>
+          <ImpactFlowLogo variant="icon" height={32} className="sc-header__brand" />
           <div>
             <h1 className="sc-header__title">Motor de Simulació</h1>
-            <p className="sc-header__sub">ImpactFlow · Entorn de proves i demo</p>
+            <p className="sc-header__sub">Entorn de proves i demo</p>
           </div>
         </div>
         <div className="sc-header__kpis">

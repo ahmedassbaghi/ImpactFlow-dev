@@ -894,7 +894,19 @@
 
 /* ── New: IPI intro block (inline before the evolution chart) ────────────── */
 .donor-ui .donor-ipi-intro {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
+}
+
+.donor-ui .donor-ipi-intro .donor-section-title {
+  margin-bottom: 0.35rem;
+}
+
+.donor-ui .donor-ipi-intro .donor-section-sub--wide {
+  margin-bottom: 0.65rem;
+}
+
+.donor-ui .donor-ipi-intro .ipi-dims-grid--compact {
+  margin-bottom: 0;
 }
 .donor-ui .donor-section-sub--wide {
   max-width: 680px;
@@ -904,6 +916,51 @@
   font-weight: 700;
   color: var(--donor-heading);
   margin: 0 0 0.4rem;
+}
+
+.donor-ui .donor-evolution-block {
+  margin-top: 1.15rem;
+}
+
+.donor-ui .donor-evolution-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin-bottom: 0.55rem;
+}
+
+.donor-ui .donor-evolution-head .donor-section-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.donor-ui .donor-evolution-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--donor-muted);
+}
+
+.donor-ui .donor-evolution-legend {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.donor-ui .donor-evolution-legend--baseline {
+  background: #cbd5e1;
+  margin-left: 0.15rem;
+}
+
+.donor-ui .donor-evolution-legend--current {
+  background: var(--narinan, #f58220);
 }
 .donor-ui .ipi-dims-grid--compact .ipi-dim-card {
   padding: 0.75rem 0.9rem;
@@ -1201,6 +1258,72 @@
   font-size: 1.15rem;
 }
 
+.donor-ui .ngo-sroi-results-heading {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--donor-muted);
+}
+
+.donor-ui .ngo-sroi-impact-dual {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.donor-ui .ngo-sroi-impact-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #e8edf2;
+  background: var(--donor-surface, #fff);
+}
+
+.donor-ui .ngo-sroi-impact-metric--ipi {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.donor-ui .ngo-sroi-impact-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--donor-muted);
+}
+
+.donor-ui .ngo-sroi-impact-metric--ipi .ngo-sroi-impact-label {
+  color: #166534;
+}
+
+.donor-ui .ngo-sroi-impact-metric strong {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--donor-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.donor-ui .ngo-sroi-impact-metric--money strong {
+  color: var(--narinan-dark);
+}
+
+.donor-ui .ngo-sroi-impact-metric--ipi strong {
+  color: #166534;
+}
+
+.donor-ui .ngo-sroi-impact-unit {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .donor-ui .ngo-sroi-per-unit {
   margin: 0.35rem 0 0;
   font-size: 0.82rem;
@@ -1251,11 +1374,13 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    HERO LOGO
    ───────────────────────────────────────────────────────────────────────────── */
-.donor-ui .donor-hero-eyebrow {
+.donor-ui .donor-hero-eyebrow,
+.donor-ui .donor-hero-partnership {
   display: flex;
   align-items: center;
   gap: 0.55rem;
   flex-wrap: wrap;
+  margin-bottom: 0.65rem;
 }
 
 .donor-ui .donor-hero-logo {
@@ -1266,6 +1391,7 @@
   opacity: 0.92;
   flex-shrink: 0;
 }
+
 
 /* ─────────────────────────────────────────────────────────────────────────────
    NARINAN ABOUT — editorial layout amb fotos reals
@@ -1278,7 +1404,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2.5rem;
-  align-items: start;
+  align-items: center;
 }
 
 /* ── Fotos ── */
@@ -1392,41 +1518,6 @@
   letter-spacing: 0.04em;
 }
 
-/* ── Segells / Badges ── */
-.donor-ui .narinan-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.donor-ui .narinan-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 0.28rem 0.65rem;
-  border-radius: 99px;
-  letter-spacing: 0.02em;
-}
-
-.donor-ui .narinan-badge--orange {
-  background: #fff4eb;
-  color: #c05b00;
-  border: 1px solid #f9c89a;
-}
-
-.donor-ui .narinan-badge--green {
-  background: #f0fdf4;
-  color: #166534;
-  border: 1px solid #bbf7d0;
-}
-
-.donor-ui .narinan-badge--blue {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
-}
-
 /* ── Responsive ── */
 @media (max-width: 720px) {
   .donor-ui .narinan-about {
@@ -1450,4 +1541,40 @@
     grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
   }
+
+  .donor-ui .ngo-sroi-impact-dual {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PORTAL FOOTER — ImpactFlow
+   ───────────────────────────────────────────────────────────────────────────── */
+.donor-ui .donor-portal-footer {
+  text-align: center;
+  padding: 2rem 1rem 2.5rem;
+  border-top: 1px solid #e8edf2;
+  background: var(--donor-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.donor-ui .donor-portal-footer .if-logo {
+  align-items: center;
+}
+
+.donor-ui .donor-portal-footer p {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--donor-text);
+}
+
+.donor-ui .donor-portal-footer-sub {
+  margin-top: 0.35rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  color: var(--donor-muted) !important;
 }

@@ -98,3 +98,57 @@
   font-size: 0.68rem;
   color: var(--donor-muted, #64748b);
 }
+
+/* Portal donant — versió compacta (2 columnes, menys alçada) */
+.dim-evolution--compact {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.55rem;
+}
+
+.dim-evolution--compact .dim-evolution-card {
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+}
+
+.dim-evolution--compact .dim-evolution-header {
+  margin-bottom: 0.45rem;
+  align-items: center;
+}
+
+.dim-evolution--compact .dim-evolution-title {
+  font-size: 0.88rem;
+}
+
+.dim-evolution--compact .dim-evolution-gain {
+  font-size: 0.78rem;
+}
+
+.dim-evolution--compact .dim-evolution-bars {
+  gap: 0.35rem;
+}
+
+.dim-evolution--compact .dim-evolution-row {
+  grid-template-columns: 40px 1fr 28px;
+  gap: 0.35rem;
+}
+
+.dim-evolution--compact .dim-evolution-row-label {
+  font-size: 0.68rem;
+}
+
+.dim-evolution--compact .dim-evolution-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+.dim-evolution--compact .dim-evolution-value {
+  font-size: 0.72rem;
+}
+
+@media (max-width: 520px) {
+  .dim-evolution--compact {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+  }
+}

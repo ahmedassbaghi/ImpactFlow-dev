@@ -17,6 +17,8 @@ type Props = {
   dimLabels: Record<string, string>;
   dimDescs: Record<string, string>;
   dimColors: Record<string, string>;
+  /** Layout dens per al portal donant (sense descripcions repetides). */
+  compact?: boolean;
 };
 
 function barWidth(value: number): string {
@@ -29,6 +31,7 @@ export default function DimensionEvolutionChart({
   dimLabels,
   dimDescs,
   dimColors,
+  compact = false,
 }: Props) {
   const [animate, setAnimate] = useState(false);
   useEffect(() => {
@@ -37,7 +40,10 @@ export default function DimensionEvolutionChart({
   }, [dimensions]);
 
   return (
-    <div className="dim-evolution" role="list">
+    <div
+      className={`dim-evolution${compact ? " dim-evolution--compact" : ""}`}
+      role="list"
+    >
       {Object.entries(dimensions).map(([dim, data]) => {
         const baseline = data?.baseline ?? 0;
         const current = data?.current ?? 0;
@@ -56,7 +62,9 @@ export default function DimensionEvolutionChart({
                 <h3 className="dim-evolution-title" style={{ color: meta.color }}>
                   {meta.label}
                 </h3>
-                {meta.desc && <p className="dim-evolution-desc">{meta.desc}</p>}
+                {!compact && meta.desc && (
+                  <p className="dim-evolution-desc">{meta.desc}</p>
+                )}
               </div>
               <span
                 className="dim-evolution-gain"
@@ -107,11 +115,13 @@ export default function DimensionEvolutionChart({
               </div>
             </div>
 
-            <div className="dim-evolution-scale" aria-hidden>
-              <span>0</span>
-              <span>50</span>
-              <span>100</span>
-            </div>
+            {!compact && (
+              <div className="dim-evolution-scale" aria-hidden>
+                <span>0</span>
+                <span>50</span>
+                <span>100</span>
+              </div>
+            )}
           </article>
         );
       })}

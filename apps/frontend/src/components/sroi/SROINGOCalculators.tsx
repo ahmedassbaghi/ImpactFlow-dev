@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Coins, HandHeart } from "lucide-react";
+import { Coins, HandHeart, TrendingUp } from "lucide-react";
 import type { NgoSroiCalculator } from "../../api/dashboard";
 
 type Props = {
@@ -12,6 +12,17 @@ type Props = {
 
 function formatEur(n: number) {
   return `€${n.toLocaleString("ca-ES", { maximumFractionDigits: 0 })}`;
+}
+
+/** Proporció de beneficis del programa → part equivalent del guany mitjà IPI per infant. */
+function estimateIpiPts(
+  totalBenefitEur: number,
+  programOutcomesEur: number,
+  avgIpiGain: number
+): number {
+  if (!programOutcomesEur || programOutcomesEur <= 0 || !avgIpiGain) return 0;
+  const share = Math.min(totalBenefitEur / programOutcomesEur, 1);
+  return avgIpiGain * share;
 }
 
 export default function SROINGOCalculators({
@@ -39,6 +50,18 @@ export default function SROINGOCalculators({
 
   const money = data.money_calculator;
   const vol = data.volunteer_calculator;
+  const programOutcomes =
+    data.impact.outcomes_value_eur ?? data.impact.total_value_eur ?? 0;
+  const avgIpiGain = data.program.avg_ipi_gain ?? 0;
+
+  const moneyBenefit = money.total_benefit_eur ?? money.total_value_eur ?? 0;
+  const volBenefit = vol.total_benefit_eur ?? vol.total_value_eur ?? 0;
+  const moneyIpi = estimateIpiPts(moneyBenefit, programOutcomes, avgIpiGain);
+  const volIpi = estimateIpiPts(volBenefit, programOutcomes, avgIpiGain);
+  const moneyIpiPerEuro =
+    contributionEur > 0 ? moneyIpi / contributionEur : 0;
+  const volIpiPerHour =
+    volunteerHours > 0 ? volIpi / volunteerHours : 0;
 
   return (
     <div className="ngo-sroi">
@@ -49,7 +72,8 @@ export default function SROINGOCalculators({
             <h3 id="money-calc-title">Aportació en diners</h3>
           </div>
           <p className="ngo-sroi-calc-lead">
-            Introdueix quant voldries aportar i veuràs l&apos;impacte estimat.
+            Introdueix quant voldries aportar i veuràs l&apos;impacte en valor social (€)
+            i la millora estimada en punts IPI.
           </p>
           <label className="ngo-sroi-field" htmlFor="ngo-contribution">
             Import (€)
@@ -64,12 +88,26 @@ export default function SROINGOCalculators({
             />
           </label>
           <div className="ngo-sroi-results">
-            <div className="ngo-sroi-result-total">
-              <span>Impacte estimat</span>
-              <strong>{formatEur(money.total_benefit_eur ?? money.total_value_eur ?? 0)}</strong>
+            <p className="ngo-sroi-results-heading">Impacte estimat</p>
+            <div className="ngo-sroi-impact-dual">
+              <div className="ngo-sroi-impact-metric ngo-sroi-impact-metric--money">
+                <span className="ngo-sroi-impact-label">Valor social</span>
+                <strong>{formatEur(moneyBenefit)}</strong>
+              </div>
+              <div className="ngo-sroi-impact-metric ngo-sroi-impact-metric--ipi">
+                <span className="ngo-sroi-impact-label">
+                  <TrendingUp size={13} strokeWidth={2.5} aria-hidden />
+                  Millora IPI
+                </span>
+                <strong>
+                  {moneyIpi > 0 ? "+" : ""}
+                  {moneyIpi.toFixed(1)} <span className="ngo-sroi-impact-unit">pts</span>
+                </strong>
+              </div>
             </div>
             <p className="ngo-sroi-per-unit">
-              <strong>{money.value_per_euro.toFixed(2)} €</strong> de valor per cada €1 que aportes
+              <strong>{money.value_per_euro.toFixed(2)} €</strong> de valor per cada €1 ·{" "}
+              <strong>{moneyIpiPerEuro.toFixed(2)} pts IPI</strong> per €1 (estimació per infant)
             </p>
           </div>
         </article>
@@ -80,7 +118,8 @@ export default function SROINGOCalculators({
             <h3 id="vol-calc-title">Temps de voluntariat</h3>
           </div>
           <p className="ngo-sroi-calc-lead">
-            Introdueix les hores que dedicaries i veuràs l&apos;impacte estimat.
+            Introdueix les hores que dedicaries i veuràs l&apos;impacte en valor social (€)
+            i la millora estimada en punts IPI.
           </p>
           <label className="ngo-sroi-field" htmlFor="ngo-vol-hours">
             Hores
@@ -96,16 +135,30 @@ export default function SROINGOCalculators({
             />
           </label>
           <div className="ngo-sroi-results">
-            <div className="ngo-sroi-result-total">
-              <span>Impacte estimat</span>
-              <strong>{formatEur(vol.total_benefit_eur ?? vol.total_value_eur ?? 0)}</strong>
+            <p className="ngo-sroi-results-heading">Impacte estimat</p>
+            <div className="ngo-sroi-impact-dual">
+              <div className="ngo-sroi-impact-metric ngo-sroi-impact-metric--money">
+                <span className="ngo-sroi-impact-label">Valor social</span>
+                <strong>{formatEur(volBenefit)}</strong>
+              </div>
+              <div className="ngo-sroi-impact-metric ngo-sroi-impact-metric--ipi">
+                <span className="ngo-sroi-impact-label">
+                  <TrendingUp size={13} strokeWidth={2.5} aria-hidden />
+                  Millora IPI
+                </span>
+                <strong>
+                  {volIpi > 0 ? "+" : ""}
+                  {volIpi.toFixed(1)} <span className="ngo-sroi-impact-unit">pts</span>
+                </strong>
+              </div>
             </div>
             <p className="ngo-sroi-per-unit">
               Al voltant de{" "}
               <strong>
                 {(vol.outcomes_per_hour_eur ?? vol.total_value_per_hour_eur ?? 0).toFixed(2)} €
               </strong>{" "}
-              de valor per hora
+              de valor per hora ·{" "}
+              <strong>{volIpiPerHour.toFixed(2)} pts IPI</strong> per hora (estimació per infant)
             </p>
           </div>
         </article>

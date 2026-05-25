@@ -34,6 +34,8 @@ export type DoseResponseResult = {
   curve_points: { dose: number; gain: number }[];
   observed_points: { dose: number; gain: number }[];
   interpretation: string;
+  interpretation_plain?: string;
+  interpretation_dose?: string;
   model: string;
 };
 

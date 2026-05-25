@@ -138,7 +138,7 @@
 
 .auth-body {
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -150,49 +150,32 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  gap: 0.65rem;
 }
 
-.auth-logo-wrap {
+.auth-partnership {
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   width: 100%;
 }
 
-.auth-logo-img {
-  display: block;
-  width: min(240px, 72vw);
-  height: auto;
-  max-height: 96px;
+.auth-partnership .if-logo--lockup .if-logo__img {
+  height: 52px;
+  max-width: min(200px, 42vw);
+  padding: 0.4rem 0.65rem;
+  border-radius: 12px;
+}
+
+.auth-narinan-logo {
+  height: 48px;
+  width: auto;
+  max-width: min(180px, 38vw);
   object-fit: contain;
-  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.18));
-}
-
-.auth-impactflow-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(0, 0, 0, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
-  backdrop-filter: blur(6px);
-}
-
-.auth-impactflow-tag svg {
-  flex-shrink: 0;
+  filter: brightness(0) invert(1);
   opacity: 0.95;
-}
-
-.auth-impactflow-tag-muted {
-  font-weight: 600;
-  opacity: 0.82;
+  flex-shrink: 0;
 }
 
 .auth-form-panel {

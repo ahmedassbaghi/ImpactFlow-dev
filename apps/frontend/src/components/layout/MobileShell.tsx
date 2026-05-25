@@ -1,6 +1,5 @@
 import {
   ArrowLeft,
-  BarChart3,
   Heart,
   History,
   LogOut,
@@ -14,6 +13,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { PageTransition } from "../common/PageTransition";
 import { QuickLoggerFAB } from "../sessions/QuickLoggerFAB";
 import { AppShell as AppShellDesktop } from "./AppShell";
+import ImpactFlowLogo from "../brand/ImpactFlowLogo";
 
 const VOLUNTEER_LINKS = [
   { to: "/professional/session-logger", label: "Registre", icon: Zap, primary: true },
@@ -47,7 +47,6 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
     isVolunteer ? VOLUNTEER_LINKS : isDonor ? DONOR_LINKS : [];
 
   const homePath = isDonor ? "/donor/impact-portal" : "/professional/session-logger";
-  const BrandIcon = isDonor ? Heart : BarChart3;
 
   const logout = () => {
     clear();
@@ -73,9 +72,8 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
                 <ArrowLeft size={20} strokeWidth={2.5} />
               </button>
             ) : (
-              <Link to={homePath} className="vol-app-brand">
-                <BrandIcon size={22} strokeWidth={2.5} aria-hidden />
-                <span className="vol-app-brand-text">ImpactFlow</span>
+              <Link to={homePath} className="vol-app-brand" aria-label="ImpactFlow — Inici">
+                <ImpactFlowLogo variant="icon" height={28} />
               </Link>
             )}
           </div>

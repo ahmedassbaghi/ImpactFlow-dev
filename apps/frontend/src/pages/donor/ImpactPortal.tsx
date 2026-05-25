@@ -10,6 +10,7 @@ import {
 import { getDonorDashboard, getDonorSROICalculator, getInterventionEffect } from "../../api/dashboard";
 import SROINGOCalculators from "../../components/sroi/SROINGOCalculators";
 import DimensionEvolutionChart from "../../components/donor/DimensionEvolutionChart";
+import ImpactFlowLogo from "../../components/brand/ImpactFlowLogo";
 
 const DEFAULT_CONTRIBUTION_EUR = 1000;
 const ORG_SLUG = "narinan";
@@ -157,11 +158,21 @@ export default function ImpactPortalPage() {
       {/* ── 1. HERO ─────────────────────────────────────────────── */}
       <section className="donor-hero">
         <div className="donor-hero-inner">
-          <div className="donor-hero-eyebrow">
-            <img src="/images/narinan/Narinan_logo.png" alt="Narinan" className="donor-hero-logo" />
-            Mesura d'Impacte Social 2024–25
+          <div
+            className="donor-hero-partnership"
+            aria-label="ImpactFlow en col·laboració amb Narinan"
+          >
+            <ImpactFlowLogo variant="icon" onDark height={30} />
+            <span className="partnership-x" aria-hidden>
+              ×
+            </span>
+            <img
+              src="/images/narinan/Narinan_logo.png"
+              alt="Narinan"
+              className="donor-hero-logo"
+            />
           </div>
-          <h1 className="donor-hero-title">De l'activitat a l'evidència.</h1>
+          <h1 className="donor-hero-title">De l&apos;activitat a l&apos;evidència.</h1>
           <p className="donor-hero-subtitle">
             Impacte mesurable, transparència i confiança.
           </p>
@@ -234,7 +245,6 @@ export default function ImpactPortalPage() {
                 alt="Narinan"
                 className="narinan-inline-logo"
               />
-              <span className="narinan-since">Fundada el 2016 · Entitat d'utilitat pública</span>
             </div>
 
             <h2 className="narinan-about-title">Qui és Narinan?</h2>
@@ -242,15 +252,17 @@ export default function ImpactPortalPage() {
             <p className="narinan-about-lead">
               Som una associació sense ànim de lucre que oferim{" "}
               <strong>reforç escolar gratuït en català</strong> a infants de 6 a 12 anys en risc
-              d'exclusió social o econòmica. Treballem a escoles i equipaments públics de{" "}
-              <strong>Barcelona, L'Hospitalet de Llobregat i el Moianès</strong>.
+              d&apos;exclusió social o econòmica. Treballem a escoles i equipaments públics de{" "}
+              <strong>Barcelona, L&apos;Hospitalet de Llobregat i el Moianès</strong>.
             </p>
 
             <p className="narinan-about-body">
-              A les sessions no avancem continguts: anem al <em>ritme de l'escola</em>, consolidant
-              els aprenentatges fonamentals i fomentant la comprensió lectora. Cada sessió dura{" "}
-              <strong>1,5 hores</strong>, en grups d'1 a 3 alumnes per voluntari, per garantir una
-              atenció totalment individualitzada.
+              A les sessions no avancem continguts: anem al <em>ritme de l&apos;escola</em>,
+              consolidant els aprenentatges fonamentals i fomentant la comprensió lectora. Cada
+              sessió dura <strong>1,5 hores</strong>, en grups d&apos;1 a 3 alumnes per voluntari,
+              per garantir una atenció totalment individualitzada. Des del 2020 som{" "}
+              <strong>entitat d&apos;utilitat pública</strong> i el 2024 vam rebre el segell{" "}
+              <strong>«Dóna amb confiança»</strong>.
             </p>
 
             {/* Xifres clau */}
@@ -271,19 +283,6 @@ export default function ImpactPortalPage() {
                 <span className="narinan-fact-val">1–3</span>
                 <span className="narinan-fact-lbl">alumnes/voluntari</span>
               </div>
-            </div>
-
-            {/* Segells */}
-            <div className="narinan-badges">
-              <span className="narinan-badge narinan-badge--orange">
-                Reforç 100% gratuït
-              </span>
-              <span className="narinan-badge narinan-badge--green">
-                Entitat d'utilitat pública des del 2020
-              </span>
-              <span className="narinan-badge narinan-badge--blue">
-                Segell «Dóna amb confiança» 2024
-              </span>
             </div>
           </div>
         </div>
@@ -324,12 +323,16 @@ export default function ImpactPortalPage() {
           </div>
         </div>
 
-        <div style={{ marginTop: "2rem" }}>
-          <h3 className="donor-section-subtitle">Punt de partida vs. situació actual</h3>
-          <p className="donor-section-sub">
-            Cada barra mostra la puntuació inicial (gris) i l'actual (color) per a cada dimensió,
-            amb la millora en punts IPI.
-          </p>
+        <div className="donor-evolution-block">
+          <div className="donor-evolution-head">
+            <h3 className="donor-section-subtitle">Punt de partida vs. situació actual</h3>
+            <p className="donor-evolution-hint">
+              <span className="donor-evolution-legend donor-evolution-legend--baseline" aria-hidden />
+              Entrada
+              <span className="donor-evolution-legend donor-evolution-legend--current" aria-hidden />
+              Avui
+            </p>
+          </div>
 
           {!donorReady ? (
             <div className="donor-loading-block">
@@ -342,6 +345,7 @@ export default function ImpactPortalPage() {
             </p>
           ) : (
             <DimensionEvolutionChart
+              compact
               dimensions={dimEvolution}
               dimLabels={DIM_LABELS}
               dimDescs={DIM_DESCS}
@@ -355,8 +359,9 @@ export default function ImpactPortalPage() {
       <section className="donor-section">
         <h2 className="donor-section-title">Simula la teva aportació</h2>
         <p className="donor-section-sub">
-          Quant val la teva contribució en termes d'impacte real? Introdueix un import en euros
-          o les hores de voluntariat que pots oferir, i calcula el retorn social estimat.
+          Quant val la teva contribució en impacte real? Introdueix un import en euros o les hores
+          de voluntariat i calcula el retorn social estimat en <strong>valor monetari</strong> i en{" "}
+          <strong>millora de l&apos;IPI</strong> (punts de progrés per infant).
         </p>
         {!ngoCalcReady && !sroiError && <p className="donor-loading-text">Calculant impacte…</p>}
         {sroiError && (
@@ -585,6 +590,13 @@ export default function ImpactPortalPage() {
         </div>
       </details>
       </section>
+
+      <footer className="donor-portal-footer">
+        <ImpactFlowLogo variant="icon" height={26} showTagline />
+        <p className="donor-portal-footer-sub" style={{ marginTop: "0.5rem" }}>
+          Dades i metodologia del programa Narinan
+        </p>
+      </footer>
     </div>
     </div>
   );
