@@ -24,14 +24,13 @@ import SROIFormulaExplainer from "../../components/sroi/SROIFormulaExplainer";
 
 const RISK_COLORS = ["#10b981", "#f59e0b", "#ef4444"];
 const DISTRIBUTION_COLORS = ["#22c55e", "#84cc16", "#f59e0b", "#fb7185", "#ef4444"];
-import {
-  COORDINATOR_PERIOD_DAYS,
-  COORDINATOR_DEFAULT_END_OFFSET,
-  COORDINATOR_DEFAULT_START_OFFSET,
-  computeCoordinatorPeriod,
-} from "../../utils/coordinatorPeriod";
-
-const DASHBOARD_RANGE_DAYS = COORDINATOR_PERIOD_DAYS;
+// ── Helpers de data per defecte (últims 6 mesos fins avui)
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function monthsAgoISO(n: number) {
+  const d = new Date();
+  d.setMonth(d.getMonth() - n);
+  return d.toISOString().slice(0, 10);
+}
 
 function InfoHint({ text }: { text: string }) {
   return (
@@ -173,33 +172,19 @@ function CeaSection({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProgramDashboardPage() {
-  const [programInput, setProgramInput] = useState("");
-  const [startDayOffset, setStartDayOffset] = useState(COORDINATOR_DEFAULT_START_OFFSET);
-  const [endDayOffset, setEndDayOffset] = useState(COORDINATOR_DEFAULT_END_OFFSET);
-  const [debouncedStartDayOffset, setDebouncedStartDayOffset] = useState(COORDINATOR_DEFAULT_START_OFFSET);
-  const [debouncedEndDayOffset, setDebouncedEndDayOffset] = useState(COORDINATOR_DEFAULT_END_OFFSET);
+  const [selectedProgramId, setSelectedProgramId] = useState("");
+  const [startDate, setStartDate] = useState(() => monthsAgoISO(6));
+  const [endDate, setEndDate]     = useState(() => todayISO());
   const [reportMessage, setReportMessage] = useState("");
   const [reportMessageType, setReportMessageType] = useState<"success" | "error" | "">("");
   const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedStartDayOffset(startDayOffset);
-      setDebouncedEndDayOffset(endDayOffset);
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, [startDayOffset, endDayOffset]);
-
-  const {
-    periodStart,
-    periodEnd,
-    fmtStart,
-    fmtEnd,
-    selectedRangeDays,
-  } = useMemo(
-    () => computeCoordinatorPeriod(debouncedStartDayOffset, debouncedEndDayOffset),
-    [debouncedStartDayOffset, debouncedEndDayOffset],
-  );
+  const periodStart = startDate;
+  const periodEnd   = endDate;
+  const selectedRangeDays = useMemo(() => {
+    const ms = new Date(endDate).getTime() - new Date(startDate).getTime();
+    return Math.max(1, Math.ceil(ms / 86_400_000) + 1);
+  }, [startDate, endDate]);
   const trendMonths = useMemo(() => Math.max(1, Math.ceil(selectedRangeDays / 30)), [selectedRangeDays]);
 
   const { data, isLoading } = useQuery({
@@ -208,15 +193,11 @@ export default function ProgramDashboardPage() {
     placeholderData: (prev) => prev,
   });
   const { data: programs } = useQuery({ queryKey: ["programs", "dashboard"], queryFn: () => listPrograms(true) });
-  const programChoices = useMemo(() => (programs ?? []).map((p) => ({ id: p.id, label: `${p.name} · ${p.id.slice(0,8)}`, search: `${p.name} ${p.id}`.toLowerCase() })), [programs]);
-  const resolveProgramId = (raw: string) => {
-    const q = raw.trim().toLowerCase();
-    if (!q) return "";
-    const exact = programChoices.find((i) => i.label.toLowerCase() === q || i.id.toLowerCase() === q);
-    return exact?.id ?? programChoices.find((i) => i.search.includes(q))?.id ?? "";
-  };
-  const selectedProgramId = useMemo(() => resolveProgramId(programInput), [programInput, programs]);
-  useEffect(() => { if (!programInput && programChoices.length > 0) setProgramInput(programChoices[0].label); }, [programChoices, programInput]);
+  useEffect(() => {
+    if (!selectedProgramId && programs && programs.length > 0) {
+      setSelectedProgramId(programs[0].id);
+    }
+  }, [programs, selectedProgramId]);
 
   const { data: distribution } = useQuery({ queryKey: ["ipi-distribution", selectedProgramId, periodStart, periodEnd], queryFn: () => getIpiDistribution(selectedProgramId, periodStart, periodEnd), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
   const { data: trend } = useQuery({ queryKey: ["analytics-trend", selectedProgramId, trendMonths], queryFn: () => getAnalyticsTrend(selectedProgramId, trendMonths), enabled: !!selectedProgramId, placeholderData: (prev) => prev });
@@ -303,28 +284,43 @@ export default function ProgramDashboardPage() {
         <div className="dash-controls-grid dash-controls-grid--compact">
           <div>
             <div className="form-label">Programa</div>
-            <div className="combo-field">
-              <input list="dashboard-program-options" className="form-input" value={programInput} onChange={(e) => setProgramInput(e.target.value)} placeholder="Cerca per nom o ID" />
-              <datalist id="dashboard-program-options">
-                {programChoices.map((item) => <option key={item.id} value={item.label} />)}
-              </datalist>
-            </div>
+            <select
+              className="form-input"
+              value={selectedProgramId}
+              onChange={(e) => setSelectedProgramId(e.target.value)}
+            >
+              {(programs ?? []).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="dash-controls-period">
             <div className="form-label">Període analitzat</div>
-            <div className="dash-range-block">
-              <div className="dash-range-head">
-                <span className="muted">Des de: {fmtStart}</span>
-                <span className="muted">Fins a: {fmtEnd}</span>
+            <div className="dash-daterange">
+              <div className="dash-daterange-field">
+                <label className="dash-daterange-label">Des de</label>
+                <input
+                  type="date"
+                  className="form-input dash-date-input"
+                  value={startDate}
+                  max={endDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
               </div>
-              <div className="dash-range-track-wrap">
-                <div className="dash-range-track-base" />
-                <div className="dash-range-track-active" style={{ left: `${(startDayOffset / DASHBOARD_RANGE_DAYS) * 100}%`, width: `${((endDayOffset - startDayOffset) / DASHBOARD_RANGE_DAYS) * 100}%` }} />
-                <input type="range" min={0} max={DASHBOARD_RANGE_DAYS} step={1} value={startDayOffset} className="dash-range-slider dash-range-slider-start" style={{ zIndex: startDayOffset > DASHBOARD_RANGE_DAYS - endDayOffset ? 5 : 3 }} onInput={(e) => setStartDayOffset(Math.min(Number((e.target as HTMLInputElement).value), endDayOffset - 1))} />
-                <input type="range" min={0} max={DASHBOARD_RANGE_DAYS} step={1} value={endDayOffset} className="dash-range-slider dash-range-slider-end" style={{ zIndex: 4 }} onInput={(e) => setEndDayOffset(Math.max(Number((e.target as HTMLInputElement).value), startDayOffset + 1))} />
+              <span className="dash-daterange-sep">→</span>
+              <div className="dash-daterange-field">
+                <label className="dash-daterange-label">Fins a</label>
+                <input
+                  type="date"
+                  className="form-input dash-date-input"
+                  value={endDate}
+                  min={startDate}
+                  max={todayISO()}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
               </div>
-              <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.78rem" }}>Finestra: {selectedRangeDays} dies</p>
+              <span className="dash-daterange-badge">{selectedRangeDays} dies</span>
             </div>
           </div>
         </div>

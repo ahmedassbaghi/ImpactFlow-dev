@@ -1806,6 +1806,68 @@ async def donor_dashboard(
         round((avg_ipi_gain / avg_baseline_ipi) * 100, 1) if avg_baseline_ipi > 0 else 0.0
     )
 
+    # ── Fallback: quan no hi ha PeriodicAssessments, usar SessionObservations ──
+    # La simulació crea SessionObservations (puntuacions 1-5 per dimensió) però NO
+    # PeriodicAssessments; sense fallback totes les dimensions surten a 0 al portal.
+    if not per_participant_gains and pid:
+        _so_q = await db.execute(
+            select(
+                SessionObservation.participant_id,
+                SessionObservation.academic_score,
+                SessionObservation.cognitive_score,
+                SessionObservation.social_score,
+                SessionObservation.integration_score,
+            )
+            .join(Session, SessionObservation.session_id == Session.id)
+            .where(
+                Session.program_id == pid,
+                SessionObservation.academic_score.isnot(None),
+            )
+            .order_by(Session.session_date.desc(), Session.id.desc())
+        )
+        _so_all = _so_q.all()
+        _so_seen: set[str] = set()
+        _so_latest = []
+        for _row in _so_all:
+            if _row.participant_id not in _so_seen:
+                _so_seen.add(_row.participant_id)
+                _so_latest.append(_row)
+
+        if _so_latest:
+            def _so_avg_dim(rows: list, field: str) -> float:
+                vals = [((getattr(r, field) - 1) / 4.0 * 100.0) for r in rows if getattr(r, field) is not None]
+                return round(sum(vals) / len(vals), 1) if vals else 0.0
+
+            current_dims = {
+                "academic":    _so_avg_dim(_so_latest, "academic_score"),
+                "cognitive":   _so_avg_dim(_so_latest, "cognitive_score"),
+                "social":      _so_avg_dim(_so_latest, "social_score"),
+                "integration": _so_avg_dim(_so_latest, "integration_score"),
+            }
+            _so_weights = {"academic": 0.35, "cognitive": 0.25, "social": 0.25, "integration": 0.15}
+            _ipi_vals: list[float] = []
+            for _r in _so_latest:
+                _obs = {
+                    "academic":    (_r.academic_score - 1) / 4.0 * 100.0 if _r.academic_score else None,
+                    "cognitive":   (_r.cognitive_score - 1) / 4.0 * 100.0 if _r.cognitive_score else None,
+                    "social":      (_r.social_score - 1) / 4.0 * 100.0 if _r.social_score else None,
+                    "integration": (_r.integration_score - 1) / 4.0 * 100.0 if _r.integration_score else None,
+                }
+                _valid = {d: v for d, v in _obs.items() if v is not None}
+                if not _valid:
+                    continue
+                _tw = sum(_so_weights[d] for d in _valid)
+                _ipi_val = sum(_so_weights[d] * v for d, v in _valid.items()) / _tw
+                _ipi_vals.append(_ipi_val)
+                _bl = baseline_ipi_by_participant.get(_r.participant_id)
+                if _bl is not None:
+                    per_participant_gains.append(_ipi_val - _bl)
+
+            if per_participant_gains:
+                avg_ipi_gain = round(sum(per_participant_gains) / len(per_participant_gains), 1)
+                avg_ipi_gain_pct = round((avg_ipi_gain / avg_baseline_ipi) * 100, 1) if avg_baseline_ipi > 0 else 0.0
+            current_ipi = round(sum(_ipi_vals) / len(_ipi_vals), 1) if _ipi_vals else 0.0
+
     # Hours of support (total session hours)
     if pid:
         sessions_q = await db.execute(
@@ -1849,6 +1911,49 @@ async def donor_dashboard(
     else:
         narrative = f"El programa s'ha iniciat recentment amb {n_participants} participants en seguiment actiu."
 
+    # ── SROI canònic (mateix motor que /analytics/sroi al dashboard coordinador) ──
+    # Període: últims 6 mesos. Sense autenticació, usem la capa de servei directament.
+    canonical_sroi_ratio = 0.0
+    canonical_sroi_value_eur = 0.0
+    canonical_sroi_cost_eur = 0.0
+    try:
+        if pid:
+            from app.algorithms.sroi_engine import build_sroi_extra, calculate_sroi
+            from app.services.program_sroi_metrics import load_program_period_metrics
+
+            _sroi_end = date.today()
+            # 6 calendar months back — same as JS setMonth(-6) used by the coordinator frontend
+            _sm = _sroi_end.month - 6
+            _sy = _sroi_end.year + (_sm - 1) // 12 if _sm <= 0 else _sroi_end.year
+            _sm = _sm + 12 if _sm <= 0 else _sm
+            import calendar as _cal
+            _sroi_start = _sroi_end.replace(
+                year=_sy, month=_sm,
+                day=min(_sroi_end.day, _cal.monthrange(_sy, _sm)[1]),
+            )
+            _m = await load_program_period_metrics(db, pid, _sroi_start, _sroi_end)
+            _extra = build_sroi_extra(
+                sessions=_m["n_sessions"],
+                avg_duration_h=_m["avg_duration_h"],
+                pct_high_risk=_m["pct_high_risk"],
+                avg_ipi_gain=_m["avg_ipi_gain"],
+                pct_integration_gain=_m.get("pct_integration_gain"),
+            )
+            _extra["monthly_fixed_cost_per_participant_eur"] = _m["monthly_fixed_cost_per_participant_eur"]
+            _extra["marginal_cost_per_session_eur"] = _m["marginal_cost_per_session_eur"]
+            _sroi_result = calculate_sroi(
+                n_participants=_m["n_participants"],
+                avg_ipi_gain=_m["avg_ipi_gain"],
+                program_cost_eur=_m["operating_cost_eur"],
+                program_duration_months=_m["program_duration_months"],
+                extra=_extra,
+            )
+            canonical_sroi_ratio = float(_sroi_result.get("sroi_ratio", 0.0))
+            canonical_sroi_value_eur = float(_sroi_result.get("total_social_value_eur", 0.0))
+            canonical_sroi_cost_eur = float(_sroi_result.get("total_investment_eur", 0.0))
+    except Exception:
+        pass
+
     return {
         "organization": org_slug,
         "program_id": pid,
@@ -1858,6 +1963,10 @@ async def donor_dashboard(
         "avg_ipi_gain": avg_ipi_gain,
         "hours_of_support": int(hours_of_support),
         "retention_rate": retention_rate,
+        # Canonical SROI (same engine as coordinator dashboard — last 6 months)
+        "sroi_ratio": canonical_sroi_ratio,
+        "sroi_total_value_eur": canonical_sroi_value_eur,
+        "sroi_cost_eur": canonical_sroi_cost_eur,
         # Before/after by dimension
         "dimension_evolution": {
             dim: {
@@ -2356,16 +2465,50 @@ async def analytics_trend(
     current_user: User = Depends(get_current_user),
 ):
     start_date = date.today() - timedelta(days=months * 30)
-    result = await db.execute(
+
+    # Intentar primer amb PeriodicAssessment (avaluacions formals)
+    pa_result = await db.execute(
         select(PeriodicAssessment.period_label, func.avg(PeriodicAssessment.ipi_score))
         .where(
             PeriodicAssessment.program_id == program_id,
             PeriodicAssessment.assessment_date >= start_date,
+            PeriodicAssessment.ipi_score.isnot(None),
         )
         .group_by(PeriodicAssessment.period_label)
         .order_by(PeriodicAssessment.period_label)
     )
-    return [{"period": p, "avg_ipi": round(v or 0, 1)} for p, v in result.all()]
+    pa_rows = pa_result.all()
+    if len(pa_rows) >= 2:
+        return [{"period": p, "avg_ipi": round(v or 0, 1)} for p, v in pa_rows]
+
+    # Fallback: derivar IPI mensual des de SessionObservation
+    # IPI = 0.35*academic + 0.25*cognitive + 0.25*social + 0.15*integration (escala 1-5 → 0-100)
+    ipi_expr = (
+        0.35 * (func.coalesce(SessionObservation.academic_score,    3) - 1) / 4.0 * 100 +
+        0.25 * (func.coalesce(SessionObservation.cognitive_score,    3) - 1) / 4.0 * 100 +
+        0.25 * (func.coalesce(SessionObservation.social_score,       3) - 1) / 4.0 * 100 +
+        0.15 * (func.coalesce(SessionObservation.integration_score,  3) - 1) / 4.0 * 100
+    )
+    so_result = await db.execute(
+        select(
+            func.strftime("%Y-%m", Session.session_date).label("month"),
+            func.avg(ipi_expr).label("avg_ipi"),
+        )
+        .join(Session, SessionObservation.session_id == Session.id)
+        .where(
+            Session.program_id == program_id,
+            Session.session_date >= start_date,
+            SessionObservation.academic_score.isnot(None),
+        )
+        .group_by(func.strftime("%Y-%m", Session.session_date))
+        .order_by(func.strftime("%Y-%m", Session.session_date))
+    )
+    so_rows = so_result.all()
+    if so_rows:
+        return [{"period": m, "avg_ipi": round(v or 0, 1)} for m, v in so_rows]
+
+    # Si no hi ha res, retornar els PeriodicAssessment individuals que hi hagi
+    return [{"period": p, "avg_ipi": round(v or 0, 1)} for p, v in pa_rows]
 
 
 @app.get(f"{settings.api_prefix}/analytics/impact-statement")

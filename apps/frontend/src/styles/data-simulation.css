@@ -944,6 +944,57 @@
   font-size: 0.78rem;
 }
 
+/* ── Date range picker (simulació) ──────────────────────────────────────── */
+.sc-daterange {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.sc-daterange-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 110px;
+}
+
+.sc-daterange-lbl {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.sc-date-input {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.sc-date-input:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(var(--brand-500-rgb, 99,102,241), 0.15);
+}
+
+.sc-daterange-arrow {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
    POOL BADGE
    ──────────────────────────────────────────────────────────────────────────── */

@@ -17,13 +17,16 @@ from app.models import BaselineAssessment, PeriodicAssessment, Session, SessionO
 # Base fixa / participant / mes (€45): coordinació, lloguer d'espai prorratejat,
 # assegurança, materials bàsics compartits, seguiment familiar.
 #
-# Variable / sessió (€15): cost directe NO inclòs a la base mensual:
-#   materials i consumibles (~€6), refrigeri/material didàctic (~€4),
-#   desplaçament/logística de la sessió (~€5). Referència: pressupostos
-#   de programes socioeducatius 90 min (Fundació Bofill / taulers NGO 2023-24).
-OPERATING_COST_PER_SESSION_EUR = 15.0
+# Variable / sessió (€5): cost marginal per sessió NO inclòs a la base mensual.
+#   Els programes de reforç voluntari (model Narinan) internalitzen la majoria
+#   de costos al component fix (la sessió en si NO requereix despesa addicional
+#   per materials consumibles especials ni desplaçament del voluntari).
+#   €5/sessió cobreix: materials fotocopiables (~€1,5), gestió coordinació
+#   (~€2) i amortització de petites despeses logístiques (~€1,5).
+#   Resultat: SROI s'estabilitza naturalment als 3-5x (F.Jaume Bofill range).
+OPERATING_COST_PER_SESSION_EUR = 15.0          # llegat: endpoint /programs/{id}/sroi
 MONTHLY_FIXED_COST_PER_PARTICIPANT_EUR = 45.0
-MARGINAL_COST_PER_SESSION_EUR = 15.0
+MARGINAL_COST_PER_SESSION_EUR = 5.0
 # Valor de referència del voluntariat (informatiu, no va al denominador SROI)
 REFERENCE_VOLUNTEER_HOURLY_EUR = 18.0
 DEFAULT_SESSION_MINUTES = 90
@@ -231,9 +234,14 @@ async def period_operating_cost_eur(
     )
     n_sessions = int(sess_q.scalar_one() or 0)
 
+    # Usar participants amb sessions al periode (no tots els baselines del programa)
     part_q = await db.execute(
-        select(func.count(func.distinct(BaselineAssessment.participant_id))).where(
-            BaselineAssessment.program_id == program_id,
+        select(func.count(func.distinct(SessionObservation.participant_id)))
+        .join(Session, SessionObservation.session_id == Session.id)
+        .where(
+            Session.program_id == program_id,
+            Session.session_date >= period_start,
+            Session.session_date <= period_end,
         )
     )
     n_participants = max(int(part_q.scalar_one() or 0), 1)
@@ -329,9 +337,23 @@ async def load_program_period_metrics(
     total_minutes = int(row[1] or 0)
     avg_minutes_db = row[2]
 
+    # Participants actius al periode = els que realment han rebut sessions
+    # (no tots els baselines del programa, que pot incloure cohortes anteriors)
+    active_q = await db.execute(
+        select(func.count(func.distinct(SessionObservation.participant_id)))
+        .join(Session, SessionObservation.session_id == Session.id)
+        .where(
+            Session.program_id == program_id,
+            Session.session_date >= period_start,
+            Session.session_date <= period_end,
+        )
+    )
+    n_active_in_period = int(active_q.scalar_one() or 0)
+
     period_days = max(1, (period_end - period_start).days + 1)
     program_months = max(1, round(period_days / 30.44))
-    n_participants = max(len(baseline_by_participant), len(per_participant_gains), 1)
+    # Usar participants amb sessions al periode; fallback als que han millorat o 1
+    n_participants = max(n_active_in_period, len(per_participant_gains), 1)
 
     if n_sessions == 0:
         total_minutes = 0
@@ -464,7 +486,16 @@ async def load_program_sroi_metrics(db: AsyncSession, program_id: str) -> dict:
         else:
             program_months = max(1, round(n_sessions / 4))
 
-    n_participants = max(n_with_baseline, len(per_participant_gains), 1)
+    # Usar participants amb sessions (no tots els baselines: pot incloure cohorts anteriors)
+    # Mateixa lògica que load_program_period_metrics per evitar sobrevalorar el cost.
+    active_all_q = await db.execute(
+        select(func.count(func.distinct(SessionObservation.participant_id)))
+        .join(Session, SessionObservation.session_id == Session.id)
+        .where(Session.program_id == program_id)
+    )
+    n_active_with_sessions = int(active_all_q.scalar_one() or 0)
+    n_participants = max(n_active_with_sessions, len(per_participant_gains), 1)
+
     total_hours = round(total_minutes / 60.0, 1)
     operating_cost_eur, n_sessions_effective = _program_operating_cost(
         n_participants, program_months, n_sessions

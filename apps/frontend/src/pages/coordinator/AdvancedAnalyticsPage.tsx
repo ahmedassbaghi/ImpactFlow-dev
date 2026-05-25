@@ -48,7 +48,11 @@ import {
 } from "../../api/advanced";
 import { InterRaterReliabilityCard } from "../../components/analytics/InterRaterReliabilityCard";
 import SROIFormulaExplainer from "../../components/sroi/SROIFormulaExplainer";
-import { computeCoordinatorPeriod } from "../../utils/coordinatorPeriod";
+
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function monthsAgoISO(n: number) {
+  const d = new Date(); d.setMonth(d.getMonth() - n); return d.toISOString().slice(0, 10);
+}
 
 const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -509,7 +513,7 @@ function MonteCarloSROICard({
         </button>
       </div>
       <p id="mc-cost-hint" className="adv-sroi-kpi-hint" style={{ margin: 0 }}>
-        El cost es recalcula a cada simulació segons sessions (45 €/part./mes + 15 €/sessió efectiva).
+        El cost es recalcula a cada simulació: base fixa 45 €/part./mes + 5 €/sessió efectiva (model NGO voluntariat).
       </p>
 
       <div className="adv-mc-headline">
@@ -740,6 +744,8 @@ export default function AdvancedAnalyticsPage() {
   });
   const [programId, setProgramId] = useState<string>("");
   const [schoolId, setSchoolId] = useState<string>("");
+  const [periodStart, setPeriodStart] = useState(() => monthsAgoISO(6));
+  const [periodEnd, setPeriodEnd] = useState(() => todayISO());
   const { data: schools = [] } = useQuery({ queryKey: ["schools"], queryFn: listSchools });
 
   useEffect(() => {
@@ -748,12 +754,14 @@ export default function AdvancedAnalyticsPage() {
     }
   }, [programId, programs]);
 
-  const period = useMemo(() => computeCoordinatorPeriod(), []);
-  const periodLabel = `${period.fmtStart} — ${period.fmtEnd}`;
+  const periodLabel = useMemo(() => {
+    const fmt = (s: string) => new Date(s).toLocaleDateString("ca-ES", { day: "2-digit", month: "short", year: "numeric" });
+    return `${fmt(periodStart)} — ${fmt(periodEnd)}`;
+  }, [periodStart, periodEnd]);
 
   const { data: programSroi } = useQuery({
-    queryKey: ["period-sroi", programId, period.periodStart, period.periodEnd],
-    queryFn: () => getProgramSroi(programId, period.periodStart, period.periodEnd),
+    queryKey: ["period-sroi", programId, periodStart, periodEnd],
+    queryFn: () => getProgramSroi(programId, periodStart, periodEnd),
     enabled: !!programId,
   });
 
@@ -766,10 +774,10 @@ export default function AdvancedAnalyticsPage() {
             Anàlisi avançada
           </h1>
           <p className="page-subtitle">
-            SROI del període {periodLabel} (alineat amb el dashboard), dosi-resposta IPI, Monte Carlo i anomalies.
+            SROI, dosi-resposta IPI, Monte Carlo i anomalies — període seleccionable, alineat amb el dashboard.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
           <select
             className="form-select"
             style={{ minWidth: 180 }}
@@ -793,6 +801,29 @@ export default function AdvancedAnalyticsPage() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          {/* Period pickers — same as coordinator dashboard */}
+          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+            <input
+              type="date"
+              className="form-input"
+              style={{ fontSize: "0.82rem", padding: "0.35rem 0.5rem" }}
+              value={periodStart}
+              max={periodEnd}
+              onChange={(e) => setPeriodStart(e.target.value)}
+              aria-label="Inici del període"
+            />
+            <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>→</span>
+            <input
+              type="date"
+              className="form-input"
+              style={{ fontSize: "0.82rem", padding: "0.35rem 0.5rem" }}
+              value={periodEnd}
+              min={periodStart}
+              max={todayISO()}
+              onChange={(e) => setPeriodEnd(e.target.value)}
+              aria-label="Fi del període"
+            />
+          </div>
         </div>
       </div>
 
@@ -810,8 +841,8 @@ export default function AdvancedAnalyticsPage() {
         >
           <SROIModelSummaryCard
             programId={programId}
-            periodStart={period.periodStart}
-            periodEnd={period.periodEnd}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
             periodLabel={periodLabel}
           />
           <DimensionEffectsCard programId={programId} />
@@ -820,8 +851,8 @@ export default function AdvancedAnalyticsPage() {
           <MonteCarloSROICard
             programId={programId}
             metrics={programSroi}
-            periodStart={period.periodStart}
-            periodEnd={period.periodEnd}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
           />
           <AnomalyCard programId={programId} />
         </motion.div>

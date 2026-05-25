@@ -116,14 +116,20 @@ export default function ImpactPortalPage() {
       }),
   });
 
+  // Hero is ready as soon as donor data arrives — no need to wait for NGO calc
   const donorReady = !donorLoading && !!donor;
-  const sroiReady = !sroiLoading && !!sroiCalc;
+  const sroiReady = donorReady; // SROI ratio now comes from donor dashboard directly
+  const ngoCalcReady = !sroiLoading && !!sroiCalc;
 
   const nParticipants = donor?.n_participants ?? 0;
   const avgIpiGainPct = donor?.avg_ipi_gain_pct ?? 0;
-  const sroiPerEuro =
-    sroiCalc?.impact.sroi_per_euro_invested ?? sroiCalc?.impact.sroi_ratio_imputed ?? 0;
-  const imputedCost = sroiCalc?.program.operating_cost_eur ?? sroiCalc?.program.imputed_program_cost_eur ?? 0;
+  // Hero SROI: use the canonical value from donor_dashboard (same engine as coordinator)
+  // Falls back to NGO calculator only if not yet available
+  const sroiPerEuro: number =
+    (donor?.sroi_ratio as number | undefined) ??
+    (sroiCalc?.impact.sroi_per_euro_invested ?? sroiCalc?.impact.sroi_ratio_imputed ?? 0);
+  const imputedCost = (donor?.sroi_cost_eur as number | undefined) ??
+    sroiCalc?.program.imputed_program_cost_eur ?? 0;
   const riskDist = donor?.risk_distribution ?? { low: 0, medium: 0, high: 0 };
   const dimEvolution = donor?.dimension_evolution ?? {};
 
@@ -151,13 +157,16 @@ export default function ImpactPortalPage() {
       {/* ── 1. HERO ─────────────────────────────────────────────── */}
       <section className="donor-hero">
         <div className="donor-hero-inner">
-          <div className="donor-hero-eyebrow">Narinaan · Mesura d'Impacte Social 2024–25</div>
+          <div className="donor-hero-eyebrow">
+            <img src="/images/narinan/Narinan_logo.png" alt="Narinan" className="donor-hero-logo" />
+            Mesura d'Impacte Social 2024–25
+          </div>
           <h1 className="donor-hero-title">De l'activitat a l'evidència.</h1>
           <p className="donor-hero-subtitle">
             Impacte mesurable, transparència i confiança.
           </p>
 
-          {!donorReady || !sroiReady ? (
+          {!donorReady ? (
             <HeroSkeleton />
           ) : (
             <div className="donor-counters">
@@ -169,15 +178,15 @@ export default function ImpactPortalPage() {
               </div>
               <div className="donor-counter-card">
                 <div className="donor-counter-value">
-                  <AnimatedCounter target={avgIpiGainPct} decimals={1} suffix="%" />
+                  +<AnimatedCounter target={avgIpiGainPct} decimals={1} suffix="%" />
                 </div>
-                <div className="donor-counter-label">Millora mitjana IPI</div>
+                <div className="donor-counter-label">Millora de progrés integral (IPI)</div>
               </div>
-              <div className="donor-counter-card">
+              <div className="donor-counter-card donor-counter-card--highlight">
                 <div className="donor-counter-value">
-                  €<AnimatedCounter target={sroiPerEuro} decimals={2} />
+                  <AnimatedCounter target={sroiPerEuro} decimals={2} />×
                 </div>
-                <div className="donor-counter-label">Valor generat per cada €1 invertit</div>
+                <div className="donor-counter-label">Retorn social per cada €1 invertit</div>
               </div>
             </div>
           )}
@@ -193,55 +202,163 @@ export default function ImpactPortalPage() {
         </div>
       </section>
 
-      {/* ── 2. FUNCIÓ DE NARINAN ───────────────────────────────── */}
-      <section className="donor-section">
-        <h2 className="donor-section-title">Què fa Narinan?</h2>
-        <p className="donor-section-sub">
-          Narinan acompanya infants i joves en situació de vulnerabilitat mitjançant programes
-          socioeducatius a les escoles: reforç escolar, teatre social, suport emocional i integració.
-          Cada infant és acompanyat amb constància i el seu progrés es fa visible al llarg del curs.
-        </p>
-        <div className="donor-photo-grid">
-          <img src="/images/narinan/activity-1.svg" alt="Sessió de reforç escolar en petit grup" width={280} height={180} />
-          <img src="/images/narinan/activity-2.svg" alt="Activitat de teatre social" width={280} height={180} />
-          <img src="/images/narinan/activity-3.svg" alt="Acompanyament educatiu personalitzat" width={280} height={180} />
+      {/* ── 2. QUI ÉS NARINAN ─────────────────────────────────── */}
+      <section className="donor-section narinan-about-section">
+        <div className="narinan-about">
+
+          {/* ── Columna esquerra: fotos ── */}
+          <div className="narinan-photos">
+            <div className="narinan-photo-primary">
+              <img
+                src="/images/narinan/muchos-chicos.jpg"
+                alt="Infants participants al programa de reforç escolar de Narinan"
+              />
+            </div>
+            <div className="narinan-photo-pair">
+              <img
+                src="/images/narinan/profe-2-chicas.jpeg"
+                alt="Voluntari de Narinan fent reforç escolar amb dues alumnes"
+              />
+              <img
+                src="/images/narinan/haciendo-mates.jpeg"
+                alt="Alumna fent matemàtiques amb el suport de Narinan"
+              />
+            </div>
+          </div>
+
+          {/* ── Columna dreta: text ── */}
+          <div className="narinan-about-text">
+            <div className="narinan-logo-row">
+              <img
+                src="/images/narinan/Narinan_logo.png"
+                alt="Narinan"
+                className="narinan-inline-logo"
+              />
+              <span className="narinan-since">Fundada el 2016 · Entitat d'utilitat pública</span>
+            </div>
+
+            <h2 className="narinan-about-title">Qui és Narinan?</h2>
+
+            <p className="narinan-about-lead">
+              Som una associació sense ànim de lucre que oferim{" "}
+              <strong>reforç escolar gratuït en català</strong> a infants de 6 a 12 anys en risc
+              d'exclusió social o econòmica. Treballem a escoles i equipaments públics de{" "}
+              <strong>Barcelona, L'Hospitalet de Llobregat i el Moianès</strong>.
+            </p>
+
+            <p className="narinan-about-body">
+              A les sessions no avancem continguts: anem al <em>ritme de l'escola</em>, consolidant
+              els aprenentatges fonamentals i fomentant la comprensió lectora. Cada sessió dura{" "}
+              <strong>1,5 hores</strong>, en grups d'1 a 3 alumnes per voluntari, per garantir una
+              atenció totalment individualitzada.
+            </p>
+
+            {/* Xifres clau */}
+            <div className="narinan-facts">
+              <div className="narinan-fact">
+                <span className="narinan-fact-val">9</span>
+                <span className="narinan-fact-lbl">centres educatius</span>
+              </div>
+              <div className="narinan-fact">
+                <span className="narinan-fact-val">6–12</span>
+                <span className="narinan-fact-lbl">anys d'edat</span>
+              </div>
+              <div className="narinan-fact">
+                <span className="narinan-fact-val">1,5h</span>
+                <span className="narinan-fact-lbl">per sessió</span>
+              </div>
+              <div className="narinan-fact">
+                <span className="narinan-fact-val">1–3</span>
+                <span className="narinan-fact-lbl">alumnes/voluntari</span>
+              </div>
+            </div>
+
+            {/* Segells */}
+            <div className="narinan-badges">
+              <span className="narinan-badge narinan-badge--orange">
+                Reforç 100% gratuït
+              </span>
+              <span className="narinan-badge narinan-badge--green">
+                Entitat d'utilitat pública des del 2020
+              </span>
+              <span className="narinan-badge narinan-badge--blue">
+                Segell «Dóna amb confiança» 2024
+              </span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── 3. ABANS I ARA ─────────────────────────────────────── */}
+      {/* ── 3. COM EVOLUCIONEN ELS INFANTS (Abans i ara) ─────── */}
       <section className="donor-section donor-section-alt">
-        <h2 className="donor-section-title">Abans i ara</h2>
-        <p className="donor-section-sub">
-          Evolució de cada dimensió des del moment d'entrada al programa fins avui.
-          La puntuació IPI va de 0 a 100 punts.
-        </p>
-
-        {!donorReady ? (
-          <div className="donor-loading-block">
-            <div className="donor-skeleton donor-skeleton--card" />
-            <div className="donor-skeleton donor-skeleton--card" />
-          </div>
-        ) : Object.keys(dimEvolution).length === 0 ? (
-          <p className="donor-empty-msg">
-            Encara no hi ha prou dades per mostrar l'evolució per dimensions.
+        {/* IPI explanation — inline before the chart for natural reading flow */}
+        <div className="donor-ipi-intro">
+          <h2 className="donor-section-title">Com evolucionen els infants?</h2>
+          <p className="donor-section-sub donor-section-sub--wide">
+            Per mesurar l'impacte real del programa, hem creat l'
+            <strong>Índex de Progrés Integral (IPI)</strong> — una puntuació de{" "}
+            <strong>0 a 100</strong> que combina quatre dimensions del desenvolupament infantil.
+            Cada infant té una avaluació inicial quan entra al programa (<em>punt de partida</em>) i
+            l'anem comparant amb el seu progrés sessió a sessió.
           </p>
-        ) : (
-          <DimensionEvolutionChart
-            dimensions={dimEvolution}
-            dimLabels={DIM_LABELS}
-            dimDescs={DIM_DESCS}
-            dimColors={DIM_COLORS}
-          />
-        )}
+
+          <div className="ipi-dims-grid ipi-dims-grid--compact">
+            {Object.keys(DIM_LABELS).map((d) => {
+              const Icon = DIM_ICONS[d] ?? BookOpen;
+              const gain = donorReady ? ((dimEvolution as any)[d]?.gain ?? null) : null;
+              return (
+                <div key={d} className="ipi-dim-card" style={{ borderTop: `3px solid ${DIM_COLORS[d]}` }}>
+                  <div className="ipi-dim-name" style={{ color: DIM_COLORS[d] }}>
+                    <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />
+                    {DIM_LABELS[d]}
+                  </div>
+                  <p className="ipi-dim-desc">{DIM_DESCS[d]}</p>
+                  {gain !== null && (
+                    <div className="ipi-dim-gain" style={{ color: gain >= 0 ? "var(--risk-low)" : "var(--risk-high)" }}>
+                      {gain >= 0 ? "+" : ""}{gain.toFixed(1)} pts
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ marginTop: "2rem" }}>
+          <h3 className="donor-section-subtitle">Punt de partida vs. situació actual</h3>
+          <p className="donor-section-sub">
+            Cada barra mostra la puntuació inicial (gris) i l'actual (color) per a cada dimensió,
+            amb la millora en punts IPI.
+          </p>
+
+          {!donorReady ? (
+            <div className="donor-loading-block">
+              <div className="donor-skeleton donor-skeleton--card" />
+              <div className="donor-skeleton donor-skeleton--card" />
+            </div>
+          ) : Object.values(dimEvolution as Record<string, {gain: number}>).every(d => d.gain === 0) ? (
+            <p className="donor-empty-msg">
+              Encara no hi ha prou dades per mostrar l'evolució per dimensions.
+            </p>
+          ) : (
+            <DimensionEvolutionChart
+              dimensions={dimEvolution}
+              dimLabels={DIM_LABELS}
+              dimDescs={DIM_DESCS}
+              dimColors={DIM_COLORS}
+            />
+          )}
+        </div>
       </section>
 
       {/* ── 4. SROI / Calculadores ONG ─────────────────────────── */}
       <section className="donor-section">
         <h2 className="donor-section-title">Simula la teva aportació</h2>
         <p className="donor-section-sub">
-          Prova amb un import en euros o amb hores de voluntariat i descobreix l&apos;impacte estimat.
+          Quant val la teva contribució en termes d'impacte real? Introdueix un import en euros
+          o les hores de voluntariat que pots oferir, i calcula el retorn social estimat.
         </p>
-        {sroiLoading && <p className="donor-loading-text">Calculant impacte…</p>}
+        {!ngoCalcReady && !sroiError && <p className="donor-loading-text">Calculant impacte…</p>}
         {sroiError && (
           <p className="form-error" role="alert">
             No s&apos;ha pogut carregar l&apos;estimació. Torna-ho a provar més tard.
@@ -259,64 +376,37 @@ export default function ImpactPortalPage() {
         <InfoBox>
           <p>
             <strong>Famílies:</strong> menys despesa en reforç escolar privat quan l&apos;infant
-            millora.
+            millora acadèmicament.
           </p>
           <p>
-            <strong>Comunitat:</strong> menys situacions de risc que requereixen suport públic
-            intensiu.
+            <strong>Comunitat:</strong> menys situacions de risc d&apos;exclusió que requereixen
+            intervenció pública intensiva.
           </p>
           <p>
-            <strong>Integració:</strong> més autonomia, pertinença i seguretat en el dia a dia.
+            <strong>Integració:</strong> més autonomia, pertinença i seguretat en el dia a dia
+            de l&apos;infant i la família.
           </p>
           <p>
-            <strong>Suport educatiu:</strong> valor de les hores de sessió registrades (amb rendiments decreixents si la
-            intensitat supera 4 sessions per participant i mes).
+            <strong>Suport educatiu:</strong> valor de les hores de sessió registrades (amb
+            rendiments decreixents per sobre de 4 sessions/infant/mes, seguint evidència de{" "}
+            la Fundació Jaume Bofill).
           </p>
         </InfoBox>
       </section>
 
-      {/* ── 5. QUÈ I COM MESUREM (desplegables) ─────────────────── */}
+      {/* ── 5. EVIDÈNCIA ESTADÍSTICA ──────────────────────────────── */}
       <section className="donor-section donor-section-alt">
-        <h2 className="donor-section-title">Què i com mesurem?</h2>
-        <p className="donor-section-sub">Metodologia detallada (opcional)</p>
+        <h2 className="donor-section-title">La millora és real?</h2>
+        <p className="donor-section-sub">
+          No ens conformem amb percentatges: apliquem estadística per confirmar que el canvi
+          observat no és fruit de l&apos;atzar.
+        </p>
 
       <details className="donor-accordion">
-        <summary>Què mesurem? — L'IPI</summary>
+        <summary>Veure l'anàlisi estadística detallada</summary>
         <div className="donor-accordion-body">
         <p className="donor-section-sub" style={{ marginTop: "0.75rem" }}>
-          L'<strong>Índex de Progrés Integral (IPI)</strong> és la brúixola del programa.
-          Mesura el progrés de cada infant en quatre dimensions clau, en una escala de 0 a 100 punts.
-          Al principi, cada educador/a fa una avaluació inicial (el "punt de partida")
-          i a partir d'aquí mesurem com evoluciona cada infant al llarg del curs.
-        </p>
-        <div className="ipi-dims-grid">
-          {Object.keys(DIM_LABELS).map((d) => {
-            const Icon = DIM_ICONS[d] ?? BookOpen;
-            return (
-              <div key={d} className="ipi-dim-card" style={{ borderTop: `3px solid ${DIM_COLORS[d]}` }}>
-                <div className="ipi-dim-name" style={{ color: DIM_COLORS[d] }}>
-                  <Icon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />
-                  {DIM_LABELS[d]}
-                </div>
-                <p className="ipi-dim-desc">{DIM_DESCS[d]}</p>
-                {dimEvolution[d] && (
-                  <div className="ipi-dim-gain" style={{ color: (dimEvolution[d] as any).gain >= 0 ? "var(--risk-low)" : "var(--risk-high)" }}>
-                    {(dimEvolution[d] as any).gain >= 0 ? "+" : ""}{((dimEvolution[d] as any).gain ?? 0).toFixed(1)} pts de millora
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        </div>
-      </details>
-
-      <details className="donor-accordion">
-        <summary>La millora és real?</summary>
-        <div className="donor-accordion-body">
-        <p className="donor-section-sub">
-          No ens conformem amb percentatges: apliquem estadística rigorosa per saber si el canvi
-          és real o podria ser fruit de l'atzar. Cada indicador respon una pregunta concreta.
+          Cada indicador respon una pregunta concreta sobre la solidesa del canvi observat.
         </p>
 
         {/* Guide row */}

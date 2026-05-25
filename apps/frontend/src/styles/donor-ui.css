@@ -881,7 +881,48 @@
   100% { background-position: 200% 0; }
 }
 
-/* ... (añadir al final) */
+/* ── New: hero highlight card ────────────────────────────────────────────── */
+.donor-ui .donor-counter-card--highlight {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.18), 0 4px 16px rgba(0,0,0,0.12);
+}
+.donor-ui .donor-counter-card--highlight .donor-counter-value {
+  font-size: 2.4rem;
+  color: #fff;
+}
+
+/* ── New: IPI intro block (inline before the evolution chart) ────────────── */
+.donor-ui .donor-ipi-intro {
+  margin-bottom: 0.5rem;
+}
+.donor-ui .donor-section-sub--wide {
+  max-width: 680px;
+}
+.donor-ui .donor-section-subtitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--donor-heading);
+  margin: 0 0 0.4rem;
+}
+.donor-ui .ipi-dims-grid--compact .ipi-dim-card {
+  padding: 0.75rem 0.9rem;
+}
+.donor-ui .ipi-dims-grid--compact .ipi-dim-desc {
+  font-size: 0.78rem;
+  margin: 0.2rem 0 0;
+}
+
+@media (min-width: 640px) {
+  .donor-ui .ipi-dims-grid--compact {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 900px) {
+  .donor-ui .ipi-dims-grid--compact {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
 
 .donor-selector-bar {
   position: sticky;
@@ -1205,4 +1246,208 @@
 
 .donor-ui .ngo-sroi-legend p {
   margin: 0 0 0.5rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HERO LOGO
+   ───────────────────────────────────────────────────────────────────────────── */
+.donor-ui .donor-hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.donor-ui .donor-hero-logo {
+  height: 26px;
+  width: auto;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   NARINAN ABOUT — editorial layout amb fotos reals
+   ───────────────────────────────────────────────────────────────────────────── */
+.donor-ui .narinan-about-section {
+  background: var(--donor-surface);
+}
+
+.donor-ui .narinan-about {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+/* ── Fotos ── */
+.donor-ui .narinan-photos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.donor-ui .narinan-photo-primary img {
+  width: 100%;
+  height: 230px;
+  object-fit: cover;
+  border-radius: 14px;
+  display: block;
+}
+
+.donor-ui .narinan-photo-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.donor-ui .narinan-photo-pair img {
+  width: 100%;
+  height: 145px;
+  object-fit: cover;
+  border-radius: 10px;
+  display: block;
+}
+
+/* ── Text ── */
+.donor-ui .narinan-about-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.donor-ui .narinan-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.donor-ui .narinan-inline-logo {
+  height: 34px;
+  width: auto;
+  object-fit: contain;
+}
+
+.donor-ui .narinan-since {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--donor-muted);
+  letter-spacing: 0.03em;
+}
+
+.donor-ui .narinan-about-title {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--donor-text);
+  line-height: 1.2;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.donor-ui .narinan-about-lead {
+  font-size: 0.97rem;
+  color: var(--donor-text);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.donor-ui .narinan-about-body {
+  font-size: 0.88rem;
+  color: var(--donor-muted);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ── Xifres clau ── */
+.donor-ui .narinan-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid #e8edf2;
+  border-bottom: 1px solid #e8edf2;
+}
+
+.donor-ui .narinan-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.donor-ui .narinan-fact-val {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--narinan, #f58220);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.donor-ui .narinan-fact-lbl {
+  font-size: 0.67rem;
+  font-weight: 600;
+  color: var(--donor-muted);
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Segells / Badges ── */
+.donor-ui .narinan-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.donor-ui .narinan-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.28rem 0.65rem;
+  border-radius: 99px;
+  letter-spacing: 0.02em;
+}
+
+.donor-ui .narinan-badge--orange {
+  background: #fff4eb;
+  color: #c05b00;
+  border: 1px solid #f9c89a;
+}
+
+.donor-ui .narinan-badge--green {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.donor-ui .narinan-badge--blue {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  .donor-ui .narinan-about {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .donor-ui .narinan-photo-primary img {
+    height: 200px;
+  }
+
+  .donor-ui .narinan-photo-pair img {
+    height: 110px;
+  }
+
+  .donor-ui .narinan-about-title {
+    font-size: 1.3rem;
+  }
+
+  .donor-ui .narinan-facts {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
 }

@@ -506,17 +506,40 @@ async def reset_and_seed(
         result.messages.append("No hi ha programes actius.")
         return result
 
-    # 4. Delete all existing participants (and cascade-delete their data)
+    # 4. Delete all existing participants (and all dependent data)
+    # synchronize_session=False és obligatori en async SQLAlchemy per evitar MissingGreenlet
     existing_ids_q = await db.execute(
         select(Participant.id).where(Participant.organization_id == organization_id)
     )
     existing_ids = list(existing_ids_q.scalars().all())
     if existing_ids:
         await _clear_sessions_for_participants(db, existing_ids)
+        # Eliminar taules dependents que _clear_sessions no cobreix
         await db.execute(
-            delete(Participant).where(Participant.organization_id == organization_id)
+            delete(BaselineAssessment)
+            .where(BaselineAssessment.participant_id.in_(existing_ids))
+            .execution_options(synchronize_session=False)
+        )
+        await db.execute(
+            delete(ProgramEnrollment)
+            .where(ProgramEnrollment.participant_id.in_(existing_ids))
+            .execution_options(synchronize_session=False)
+        )
+        await db.execute(
+            delete(UserParticipantAssignment)
+            .where(UserParticipantAssignment.participant_id.in_(existing_ids))
+            .execution_options(synchronize_session=False)
+        )
+        await db.execute(
+            delete(Participant)
+            .where(Participant.organization_id == organization_id)
+            .execution_options(synchronize_session=False)
         )
         await db.flush()
+
+    # Cache names before any commit (post-commit objects are expired in async SA)
+    _program_name = program.name
+    _school_name = school.name
 
     # 5. Create N fresh participants with random baselines
     baselines_ipi: list[float] = []
@@ -597,14 +620,14 @@ async def reset_and_seed(
     await db.commit()
 
     result.participants_created = n_participants
-    result.program_name = program.name
-    result.school_name = school.name
+    result.program_name = _program_name
+    result.school_name = _school_name
     if baselines_ipi:
         result.baseline_ipi_avg = round(sum(baselines_ipi) / len(baselines_ipi), 1)
         result.baseline_ipi_min = round(min(baselines_ipi), 1)
         result.baseline_ipi_max = round(max(baselines_ipi), 1)
     result.messages.append(
-        f"Creat pool de {n_participants} alumnes per a \"{program.name}\". "
+        f"Creat pool de {n_participants} alumnes per a \"{_program_name}\". "
         f"IPI baseline: {result.baseline_ipi_min}–{result.baseline_ipi_max} "
         f"(mitjana {result.baseline_ipi_avg})."
     )
@@ -623,6 +646,8 @@ async def run_session_simulation(
     clear_existing_sessions: bool = False,
     program_id: str | None = None,
     span_weeks: int = 30,
+    start_date: date | None = None,   # Data d'inici explícita (sobreescriu span_weeks)
+    end_date: date | None = None,     # Data de fi explícita (sobreescriu span_weeks)
     absence_rate: float = 0.04,
     optimism_bias: float = 0.0,
     noise_level: float = 1.0,
@@ -747,9 +772,19 @@ async def run_session_simulation(
         # Track per-profile IPI data
         result.profile_ipi_start.setdefault(profile, []).append(base_ipi)
 
-        # Dates: en mode additiu, començar després de l'última avaluació per evitar duplicats al mateix dia
-        earliest_date = today - timedelta(weeks=span_weeks)
-        latest_date = today - timedelta(weeks=1)
+        # Dates: si l'usuari especifica rang explícit l'usem; sinó, span_weeks des d'avui
+        if start_date and end_date:
+            earliest_date = start_date
+            latest_date = end_date
+        elif start_date:
+            earliest_date = start_date
+            latest_date = today
+        elif end_date:
+            earliest_date = end_date - timedelta(weeks=span_weeks)
+            latest_date = end_date
+        else:
+            earliest_date = today - timedelta(weeks=span_weeks)
+            latest_date = today - timedelta(weeks=1)
         last_assess_q = await db.execute(
             select(PeriodicAssessment.assessment_date)
             .where(

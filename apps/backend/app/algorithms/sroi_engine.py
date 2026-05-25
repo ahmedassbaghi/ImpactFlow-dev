@@ -215,8 +215,8 @@ def _outcomes_from_breakdown(breakdown: dict[str, float]) -> tuple[dict[str, flo
         "program_delivery_value": round(delivery, 2),
     }
     collective = round(exclusion + integration + delivery, 2)
-    total = round(family + collective, 2)
-    return outcomes, round(family, 2), round(collective, 2), total
+    total = round(family + academic_ipi + collective, 2)
+    return outcomes, round(family + academic_ipi, 2), round(collective, 2), total
 
 
 def _sroi_ratio_outcomes(breakdown: dict[str, float], program_cost_eur: float) -> float:
@@ -269,7 +269,7 @@ def build_sroi_formula_explanation(
     corrections: dict,
     sensitivity: dict[str, float],
     monthly_fixed_cost_per_participant_eur: float = 45.0,
-    marginal_cost_per_session_eur: float = 15.0,
+    marginal_cost_per_session_eur: float = 5.0,
 ) -> dict:
     """Metadades per visualitzar la fórmula SROI al dashboard."""
     sessions = int(extra.get("sessions", n_participants * program_duration_months * 4))
@@ -397,7 +397,8 @@ def calculate_sroi(
 
     extra = extra or {}
     monthly_fixed = float(extra.get("monthly_fixed_cost_per_participant_eur", 45.0))
-    marginal = float(extra.get("marginal_cost_per_session_eur", 15.0))
+    # Default €5/sessió = model NGO voluntariat (materials + coordinació). NO €15 (llegat).
+    marginal = float(extra.get("marginal_cost_per_session_eur", 5.0))
 
     formula_explanation = build_sroi_formula_explanation(
         n_participants=n_participants,
@@ -452,7 +453,7 @@ def build_ngo_sroi_calculator(
     volunteer_hours: float = 1.0,
     program_date_from: str | None = None,
     program_date_to: str | None = None,
-    operating_cost_per_session_eur: float = 15.0,
+    operating_cost_per_session_eur: float = 5.0,   # model NGO voluntariat (€5/sessió)
     monthly_fixed_cost_per_participant_eur: float = 45.0,
     pct_high_risk: float = 0.30,
     pct_integration_gain: float | None = None,

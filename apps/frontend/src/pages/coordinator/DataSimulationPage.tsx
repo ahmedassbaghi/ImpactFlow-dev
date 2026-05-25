@@ -317,9 +317,16 @@ export default function DataSimulationPage() {
   const [seedResult, setSeedResult] = useState<ResetAndSeedResult | null>(null);
   const [poolBusy, setPoolBusy]     = useState(false);
 
+  // ── Helpers de data
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const monthsAgoISO = (n: number) => {
+    const d = new Date(); d.setMonth(d.getMonth() - n); return d.toISOString().slice(0, 10);
+  };
+
   // ── Simulation params ──
   const [sessions, setSessions]           = useState(20);
-  const [spanWeeks, setSpanWeeks]         = useState(24);
+  const [simStartDate, setSimStartDate]   = useState(() => monthsAgoISO(6));
+  const [simEndDate, setSimEndDate]       = useState(() => todayISO());
   const [absenceRate, setAbsenceRate]     = useState(0.05);
   const [optimism, setOptimism]           = useState(0.0);
   const [noise, setNoise]                 = useState(1.0);
@@ -398,11 +405,17 @@ export default function DataSimulationPage() {
     setJob(null);
     setLastResult(null);
     try {
+      // Calcular span_weeks de fallback a partir del rang de dates
+      const msRange = new Date(simEndDate).getTime() - new Date(simStartDate).getTime();
+      const spanWeeksFallback = Math.max(4, Math.ceil(msRange / (7 * 86_400_000)));
+
       const r = await startSimulationJob({
         sessions_per_participant: sessions,
         run_mode: "additive",
         clear_existing_sessions: clearExisting,
-        span_weeks: spanWeeks,
+        span_weeks: spanWeeksFallback,
+        start_date: simStartDate,
+        end_date: simEndDate,
         absence_rate: absenceRate,
         optimism_bias: optimism,
         noise_level: noise,
@@ -556,12 +569,42 @@ export default function DataSimulationPage() {
               hint="S'afegiran sempre com a noves (mode additiu)"
               onChange={setSessions}
             />
-            <SliderField
-              id="sim-weeks" label="Cobertura temporal"
-              value={spanWeeks} min={4} max={104}
-              format={(v) => `${v} setmanes`}
-              onChange={setSpanWeeks}
-            />
+
+            {/* Rang de dates — repartiment uniforme de sessions */}
+            <div className="sc-field">
+              <div className="sc-field__header">
+                <label className="sc-field__label">Període de distribució</label>
+                <span className="sc-field__val" style={{ color: "var(--brand-400)", fontSize: "0.72rem" }}>
+                  {Math.max(1, Math.ceil((new Date(simEndDate).getTime() - new Date(simStartDate).getTime()) / (7 * 86_400_000)))} setm.
+                </span>
+              </div>
+              <div className="sc-daterange">
+                <div className="sc-daterange-col">
+                  <span className="sc-daterange-lbl">Inici</span>
+                  <input
+                    type="date"
+                    className="sc-input sc-date-input"
+                    value={simStartDate}
+                    max={simEndDate}
+                    onChange={(e) => setSimStartDate(e.target.value)}
+                  />
+                </div>
+                <span className="sc-daterange-arrow">→</span>
+                <div className="sc-daterange-col">
+                  <span className="sc-daterange-lbl">Fi</span>
+                  <input
+                    type="date"
+                    className="sc-input sc-date-input"
+                    value={simEndDate}
+                    min={simStartDate}
+                    max={todayISO()}
+                    onChange={(e) => setSimEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="sc-field__hint">Les sessions es repartiran uniformement entre les dates seleccionades.</p>
+            </div>
+
             <SliderField
               id="sim-absence" label="Taxa d'absències"
               value={Math.round(absenceRate * 100)} min={0} max={40}

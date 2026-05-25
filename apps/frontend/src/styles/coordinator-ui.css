@@ -239,3 +239,71 @@
 .app-shell--coordinator table th {
   color: var(--narinan-dark);
 }
+
+/* ── Date-range picker (reemplaça el slider de periode) ──────────────────── */
+.dash-daterange {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+.dash-daterange-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 130px;
+}
+
+.dash-daterange-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.dash-date-input {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.88rem;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  min-width: 0;
+}
+
+.dash-date-input:focus {
+  outline: none;
+  border-color: var(--narinan);
+  box-shadow: 0 0 0 3px rgba(251,146,60,0.12);
+}
+
+.dash-daterange-sep {
+  font-size: 1rem;
+  color: var(--text-muted);
+  padding-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
+.dash-daterange-badge {
+  align-self: flex-end;
+  background: #fff4eb;
+  color: var(--narinan-dark);
+  border: 1px solid #fcd9b8;
+  border-radius: 20px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-bottom: 0.15rem;
+}
+
+@media (max-width: 600px) {
+  .dash-daterange { gap: 0.35rem; }
+  .dash-daterange-sep { display: none; }
+}

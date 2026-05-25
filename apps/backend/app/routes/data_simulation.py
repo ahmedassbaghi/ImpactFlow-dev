@@ -1,6 +1,7 @@
 """Endpoints de simulació de dades (coordinació / admin)."""
 
 import dataclasses
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -39,6 +40,8 @@ class SimulationGenerateIn(BaseModel):
     clear_existing_sessions: bool = False
     program_id: str | None = None
     span_weeks: int = Field(24, ge=4, le=104)
+    start_date: date | None = None       # Si es proporciona, distribueix sessions a partir d'aquí
+    end_date: date | None = None         # Si es proporciona, distribueix sessions fins aquí
     absence_rate: float = Field(0.05, ge=0.0, le=0.40)
     optimism_bias: float = Field(0.0, ge=-1.0, le=1.0)
     noise_level: float = Field(1.0, ge=0.2, le=2.5)
@@ -83,6 +86,8 @@ class SimulationJobIn(BaseModel):
     clear_existing_sessions: bool = False
     program_id: str | None = None
     span_weeks: int = Field(24, ge=4, le=104)
+    start_date: date | None = None       # Si es proporciona, distribueix sessions a partir d'aquí
+    end_date: date | None = None         # Si es proporciona, distribueix sessions fins aquí
     absence_rate: float = Field(0.05, ge=0.0, le=0.40)
     optimism_bias: float = Field(0.0, ge=-1.0, le=1.0)
     noise_level: float = Field(1.0, ge=0.2, le=2.5)
@@ -144,6 +149,8 @@ async def simulation_generate(
         clear_existing_sessions=payload.clear_existing_sessions,
         program_id=payload.program_id,
         span_weeks=payload.span_weeks,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
         absence_rate=payload.absence_rate,
         optimism_bias=payload.optimism_bias,
         noise_level=payload.noise_level,
@@ -183,6 +190,8 @@ async def simulation_generate_async(
         clear_existing_sessions=payload.clear_existing_sessions,
         program_id=payload.program_id,
         span_weeks=payload.span_weeks,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
         absence_rate=payload.absence_rate,
         optimism_bias=payload.optimism_bias,
         noise_level=payload.noise_level,

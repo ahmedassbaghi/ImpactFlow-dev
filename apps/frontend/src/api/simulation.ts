@@ -24,6 +24,8 @@ export type SimulationPayload = {
   clear_existing_sessions?: boolean;
   program_id?: string;
   span_weeks?: number;
+  start_date?: string;          // ISO "YYYY-MM-DD" — inici del rang temporal
+  end_date?: string;            // ISO "YYYY-MM-DD" — fi del rang temporal
   absence_rate?: number;
   optimism_bias?: number;       // -1.0 to 1.0
   noise_level?: number;         // 0.2 to 2.5
