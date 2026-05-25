@@ -1,14 +1,12 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, BookOpen, ChevronDown, ChevronUp, CheckCircle2,
   CircleHelp, TrendingUp, Users, BarChart2, Target,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import {
-  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
-  Pie, PieChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis,
-  Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, Line, LineChart,
+  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
   getAnalyticsTrend, getCostEffectiveness, getCoordinatorDashboard,
@@ -17,13 +15,12 @@ import {
 import { BootstrapCIBadge } from "../../components/analytics/BootstrapCIBadge";
 import { EffectSizeCard } from "../../components/analytics/EffectSizeCard";
 import { SignificanceIndicator } from "../../components/analytics/SignificanceIndicator";
-import { ReportInsightsModal } from "../../components/reports/ReportInsightsModal";
 import { listPrograms } from "../../api/programs";
-import { generateReport } from "../../api/reports";
 import SROIFormulaExplainer from "../../components/sroi/SROIFormulaExplainer";
 
 const RISK_COLORS = ["#10b981", "#f59e0b", "#ef4444"];
 const DISTRIBUTION_COLORS = ["#22c55e", "#84cc16", "#f59e0b", "#fb7185", "#ef4444"];
+const DIM_OBS_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b"];
 // ── Helpers de data per defecte (últims 6 mesos fins avui)
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function monthsAgoISO(n: number) {
@@ -144,7 +141,7 @@ function CeaSection({
             <div className="metric-value">{formatCurrency(ce?.cost_metrics?.cost_per_beneficiary)}</div>
           </div>
           <div className="card kpi-card">
-            <div className="kpi-label">CPI — Cost per Participant Millorat <InfoHint text="Cost per participant que millora significativament." /></div>
+            <div className="kpi-label">CPI — Cost per participant millorat <InfoHint text="Cost per participant amb millora estadísticament significativa." /></div>
             <div className="metric-value">{formatCurrency(ce?.cost_metrics?.cost_per_improved_participant)}</div>
           </div>
           <div className="card kpi-card">
@@ -175,10 +172,6 @@ export default function ProgramDashboardPage() {
   const [selectedProgramId, setSelectedProgramId] = useState("");
   const [startDate, setStartDate] = useState(() => monthsAgoISO(6));
   const [endDate, setEndDate]     = useState(() => todayISO());
-  const [reportMessage, setReportMessage] = useState("");
-  const [reportMessageType, setReportMessageType] = useState<"success" | "error" | "">("");
-  const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
-
   const periodStart = startDate;
   const periodEnd   = endDate;
   const selectedRangeDays = useMemo(() => {
@@ -218,12 +211,6 @@ export default function ProgramDashboardPage() {
     placeholderData: (prev) => prev,
   });
 
-  const reportMutation = useMutation({
-    mutationFn: async (programId: string) => generateReport({ program_id: programId, report_type: "quarterly", period_start: periodStart, period_end: periodEnd, title: `Anàlisi ${periodStart} — ${periodEnd}` }),
-    onSuccess: (payload) => { setReportMessageType("success"); setReportMessage(`Informe desat: ${payload.id}`); },
-    onError: (error: any) => { const d = error?.response?.data?.detail; setReportMessageType("error"); setReportMessage(typeof d === "string" ? `Error: ${d}` : "No s'ha pogut generar l'informe."); },
-  });
-
   const riskChartData = useMemo(() => [
     { name: "Baix", value: Number(data?.low_risk ?? 0) },
     { name: "Mitjà", value: Number(data?.medium_risk ?? 0) },
@@ -231,24 +218,16 @@ export default function ProgramDashboardPage() {
   ], [data]);
   const distributionChartData = useMemo(() => Object.entries(distribution ?? {}).map(([range, value]) => ({ range, value: Number(value) })), [distribution]);
   const trendChartData = useMemo(() => (trend ?? []).map((item) => ({ period: item.period, ipi: item.avg_ipi })), [trend]);
-  const radarData = useMemo(() => {
+  const dimensionObsData = useMemo(() => {
     const s = sessionQuality?.avg_dimension_scores;
-    if (!s) return [];
+    if (!s || !sessionQuality?.observations_count) return [];
     return [
-      { dimension: "Acadèmic",   score: Number(s.academic ?? 0) },
-      { dimension: "Cognitiu",   score: Number(s.cognitive ?? 0) },
-      { dimension: "Social",     score: Number(s.social ?? 0) },
+      { dimension: "Acadèmic", score: Number(s.academic ?? 0) },
+      { dimension: "Cognitiu", score: Number(s.cognitive ?? 0) },
+      { dimension: "Social", score: Number(s.social ?? 0) },
       { dimension: "Integració", score: Number(s.integration ?? 0) },
     ];
   }, [sessionQuality]);
-
-  const dashboardReportContent = useMemo(() => ({
-    headline_metrics: { evaluations: Number(data?.assessments_count ?? 0), improvement_pct: Math.round(Number(data?.avg_ipi ?? 0)), retention_rate: Math.round((data?.attendance_present_rate_last_30d ?? 0) * 100) },
-    session_quality: { evidence_completeness: Number(sessionQuality?.evidence_completeness ?? 0), attendance_present_rate: Number(data?.attendance_present_rate_last_30d ?? 0), avg_mood: sessionQuality?.avg_mood ?? null, avg_sentiment: sessionQuality?.avg_sentiment ?? null },
-    risk_distribution: { baix: Number(data?.low_risk ?? 0), mitja: Number(data?.medium_risk ?? 0), alt: Number(data?.high_risk ?? 0) },
-    narrative: impactStatement?.statement ?? "Analítica consolidada del període seleccionat.",
-    key_statements: [`Risc mitjà: ${Number(data?.avg_risk_score ?? 0).toFixed(2)}.`, `Qualitat de l'evidència: ${Math.round(Number(sessionQuality?.evidence_completeness ?? 0) * 100)}%.`, `Observacions: ${sessionQuality?.observations_count ?? 0}.`],
-  }), [data, impactStatement, sessionQuality]);
 
   const formatCurrency = (value: number | null | undefined) => {
     if (value == null) return "—";
@@ -268,14 +247,6 @@ export default function ProgramDashboardPage() {
         <div>
           <h1 className="page-title">Tauler analític</h1>
           <p className="page-subtitle">Progrés, evidència i eficiència del programa</p>
-        </div>
-        <div style={{ display: "flex", gap: "0.6rem" }}>
-          <button className="btn-secondary" onClick={() => setIsInsightsModalOpen(true)} disabled={!selectedProgramId}>
-            Informe complet
-          </button>
-          <Link to="/coordinator/reports" className="btn-primary" style={{ textDecoration: "none" }}>
-            Informes guardats
-          </Link>
         </div>
       </div>
 
@@ -332,11 +303,6 @@ export default function ProgramDashboardPage() {
             {formatCurrency(costEffectiveness.period_investment.cost_per_session_eur)}/sessió
           </p>
         )}
-        {reportMessage && (
-          <p style={{ color: reportMessageType === "error" ? "var(--risk-high)" : "var(--risk-low)", margin: "0.6rem 0 0", fontSize: "0.84rem" }}>
-            {reportMessage}
-          </p>
-        )}
       </div>
 
       {/* ── 3. Visió general — 4 KPIs principals ──────────────────────────── */}
@@ -390,33 +356,43 @@ export default function ProgramDashboardPage() {
               </div>
               <span className={`dash-impact-badge${ie.wilcoxon_significant ? "" : " dash-impact-badge--warn"}`}>
                 {ie.wilcoxon_significant
-                  ? <><CheckCircle2 size={13} strokeWidth={2.5} /> Efecte significatiu</>
-                  : <><AlertTriangle size={13} strokeWidth={2.5} /> Efecte no significatiu</>}
+                  ? <><CheckCircle2 size={13} strokeWidth={2.5} /> Millora confirmada</>
+                  : <><AlertTriangle size={13} strokeWidth={2.5} /> Millora no confirmada</>}
               </span>
             </div>
 
             {ie.narrative && <p className="narrative-text">{ie.narrative}</p>}
 
-            <StatGuide />
+            <p className="dash-impact-stats-lead">
+              <strong>Mida de l&apos;efecte</strong> (quant canvia el grup),{" "}
+              <strong>significació</strong> (si el canvi és real o atzar) i{" "}
+              <strong>interval de confiança</strong> (rang probable de l&apos;IPI final).
+            </p>
 
-            {/* Stats detail */}
-            <div className="stat-evidence-grid" style={{ marginTop: "1rem" }}>
+            <div className="stat-evidence-grid dash-impact-stats-grid">
               <EffectSizeCard d={ie.cohens_d} label={ie.cohens_d_label} />
               <SignificanceIndicator p={ie.wilcoxon_p} significant={ie.wilcoxon_significant} />
               <BootstrapCIBadge lower={ie.bootstrap_ci_95?.[0]} upper={ie.bootstrap_ci_95?.[1]} />
               {ie.has_control_group && (
                 <div className="stat-evidence-card">
-                  <div className="stat-evidence-label">Mann-Whitney U</div>
+                  <div className="stat-evidence-label">Comparació amb control</div>
                   <div className="stat-evidence-value" style={{ color: ie.mann_whitney_significant ? "var(--risk-low)" : "var(--risk-medium)", fontSize: "1.2rem" }}>
                     {ie.mann_whitney_p != null ? `p = ${ie.mann_whitney_p.toFixed(3)}` : "p = —"}
                   </div>
-                  <span className="stat-evidence-badge" style={{ color: ie.mann_whitney_significant ? "var(--risk-low)" : "var(--risk-medium)", background: ie.mann_whitney_significant ? "#ecfdf5" : "#fffbeb", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                    {ie.mann_whitney_significant ? <><CheckCircle2 size={11} strokeWidth={2.5} /> Grup control</> : <><AlertTriangle size={11} strokeWidth={2.5} /> Grup control</>}
+                  <span className="stat-evidence-badge" style={{ color: ie.mann_whitney_significant ? "var(--risk-low)" : "var(--risk-medium)", background: ie.mann_whitney_significant ? "#ecfdf5" : "#fffbeb" }}>
+                    {ie.mann_whitney_significant ? "Millor que el control" : "Sense diferència clara"}
                   </span>
-                  <div className="stat-evidence-hint">Intervenció vs. control</div>
+                  <div className="stat-evidence-hint">Mann-Whitney U — intervenció vs. grup de control</div>
+                  <div className="stat-evidence-plain">
+                    {ie.mann_whitney_significant
+                      ? "El grup del programa supera el grup de control amb evidència estadística."
+                      : "No es pot afirmar encara que el programa superi el grup de control."}
+                  </div>
                 </div>
               )}
             </div>
+
+            <StatGuide />
           </div>
         </DashSection>
       )}
@@ -521,22 +497,33 @@ export default function ProgramDashboardPage() {
           <div className="card">
             <div className="dash-chart-header">
               <div>
-                <div className="dash-chart-title">Qualitat per dimensió <InfoHint text="Puntuació mitjana per dimensió en el període." /></div>
+                <div className="dash-chart-title">
+                  Observacions per dimensió (1–5)
+                  <InfoHint text="Mitjana de les puntuacions registrades a cada sessió (escala 1 = baix, 5 = alt). No és l'IPI global." />
+                </div>
                 <p className="muted" style={{ margin: "0.15rem 0 0", fontSize: "0.82rem" }}>
-                  Acadèmic, cognitiu, social i integració · {sessionQuality?.observations_count ?? 0} observacions.
+                  Basat en {sessionQuality?.observations_count ?? 0} observacions de sessió al període.
                 </p>
               </div>
             </div>
-            <div className="chart-wrap">
-              {radarData.length > 0 ? (
+            <div className="chart-wrap dash-dim-chart-wrap">
+              {dimensionObsData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={220}>
-                  <RadarChart data={radarData}>
-                    <PolarGrid stroke="var(--border)" />
-                    <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 11 }} />
-                    <PolarRadiusAxis domain={[0, 5]} tick={false} />
-                    <Tooltip />
-                    <Radar dataKey="score" stroke="var(--brand-500)" fill="var(--brand-500)" fillOpacity={0.35} />
-                  </RadarChart>
+                  <BarChart
+                    data={dimensionObsData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                    <XAxis type="number" domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="dimension" width={78} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v: number) => [`${Number(v).toFixed(2)} / 5`, "Mitjana"]} />
+                    <Bar dataKey="score" name="Mitjana" radius={[0, 6, 6,  0]} barSize={22}>
+                      {dimensionObsData.map((_, index) => (
+                        <Cell key={dimensionObsData[index].dimension} fill={DIM_OBS_COLORS[index % DIM_OBS_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="empty-state" style={{ padding: "2rem" }}>
@@ -594,20 +581,6 @@ export default function ProgramDashboardPage() {
         <CeaSection costEffectiveness={costEffectiveness} formatCurrency={formatCurrency} />
       </DashSection>
 
-      <ReportInsightsModal
-        open={isInsightsModalOpen}
-        title="Informe complet del període"
-        content={dashboardReportContent}
-        onClose={() => setIsInsightsModalOpen(false)}
-        onSave={() => {
-          if (!selectedProgramId) { setReportMessageType("error"); setReportMessage("Selecciona un programa vàlid."); return; }
-          if (periodEnd < periodStart) { setReportMessageType("error"); setReportMessage("La data de fi no pot ser anterior a la data d'inici."); return; }
-          setReportMessageType(""); setReportMessage("");
-          reportMutation.mutate(selectedProgramId);
-        }}
-        saveLabel="Desar informe"
-        saving={reportMutation.isPending}
-      />
     </div>
   );
 }

@@ -118,7 +118,7 @@ export default function SROIFormulaExplainer({ formula, formatCurrency }: Props)
           </h4>
           <p className="sroi-formula-panel-desc">
             Model mixt: estructura del programa (fix, ~45 €/participant/mes) + cost directe
-            de cada sessió (~15 €: materials, consumibles i logística). El voluntariat no es
+            de cada sessió (~10 €: materials, consumibles i logística). El voluntariat no es
             compta al denominador.
           </p>
           <ul className="sroi-formula-cost-list">

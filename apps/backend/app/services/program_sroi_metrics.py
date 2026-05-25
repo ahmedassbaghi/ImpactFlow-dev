@@ -17,16 +17,11 @@ from app.models import BaselineAssessment, PeriodicAssessment, Session, SessionO
 # Base fixa / participant / mes (€45): coordinació, lloguer d'espai prorratejat,
 # assegurança, materials bàsics compartits, seguiment familiar.
 #
-# Variable / sessió (€5): cost marginal per sessió NO inclòs a la base mensual.
-#   Els programes de reforç voluntari (model Narinan) internalitzen la majoria
-#   de costos al component fix (la sessió en si NO requereix despesa addicional
-#   per materials consumibles especials ni desplaçament del voluntari).
-#   €5/sessió cobreix: materials fotocopiables (~€1,5), gestió coordinació
-#   (~€2) i amortització de petites despeses logístiques (~€1,5).
-#   Resultat: SROI s'estabilitza naturalment als 3-5x (F.Jaume Bofill range).
-OPERATING_COST_PER_SESSION_EUR = 15.0          # llegat: endpoint /programs/{id}/sroi
+# Variable / sessió (€10): cost directe per sessió registrada (materials, espai,
+# coordinació prorratejada, logística). Referència per al tauler i SROI.
+OPERATING_COST_PER_SESSION_EUR = 10.0
 MONTHLY_FIXED_COST_PER_PARTICIPANT_EUR = 45.0
-MARGINAL_COST_PER_SESSION_EUR = 5.0
+MARGINAL_COST_PER_SESSION_EUR = 10.0
 # Valor de referència del voluntariat (informatiu, no va al denominador SROI)
 REFERENCE_VOLUNTEER_HOURLY_EUR = 18.0
 DEFAULT_SESSION_MINUTES = 90
@@ -223,8 +218,7 @@ async def period_operating_cost_eur(
     period_start: date,
     period_end: date,
 ) -> tuple[int, float, int]:
-    """Cost operatiu del període (base fixa + sessions efectives × cost marginal)."""
-    # Get session count and participant count for the period
+    """Cost operatiu del període: sessions registrades × €/sessió."""
     sess_q = await db.execute(
         select(func.count(Session.id)).where(
             Session.program_id == program_id,
@@ -233,25 +227,8 @@ async def period_operating_cost_eur(
         )
     )
     n_sessions = int(sess_q.scalar_one() or 0)
-
-    # Usar participants amb sessions al periode (no tots els baselines del programa)
-    part_q = await db.execute(
-        select(func.count(func.distinct(SessionObservation.participant_id)))
-        .join(Session, SessionObservation.session_id == Session.id)
-        .where(
-            Session.program_id == program_id,
-            Session.session_date >= period_start,
-            Session.session_date <= period_end,
-        )
-    )
-    n_participants = max(int(part_q.scalar_one() or 0), 1)
-    period_days = max(1, (period_end - period_start).days + 1)
-    program_months = max(1, round(period_days / 30.44))
-
-    cost, n_sessions_effective = _program_operating_cost(
-        n_participants, program_months, n_sessions
-    )
-    return n_sessions, cost, n_sessions_effective
+    cost = round(n_sessions * MARGINAL_COST_PER_SESSION_EUR, 2)
+    return n_sessions, cost, n_sessions
 
 
 async def load_program_period_metrics(

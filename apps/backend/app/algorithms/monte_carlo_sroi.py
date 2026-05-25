@@ -172,7 +172,7 @@ def monte_carlo_sroi(
         interp = (
             f"SROI mitjà {central}× amb {prob_above_1 * 100:.0f}% de probabilitat de superar "
             f"el break-even. Model alineat amb sessions registrades i cost mixt (45€/part./mes + "
-            f"15€/sessió efectiva)."
+            f"10€/sessió efectiva)."
         )
     elif prob_above_1 >= 0.80:
         interp = (

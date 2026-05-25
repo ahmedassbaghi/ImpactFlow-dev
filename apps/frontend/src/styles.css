@@ -1245,9 +1245,24 @@ button.btn-secondary {
 
 .stat-evidence-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0.75rem;
   margin-bottom: 0.85rem;
+}
+
+.dash-impact-stats-grid {
+  margin-top: 0.85rem;
+}
+
+.dash-impact-stats-lead {
+  margin: 0.85rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.dash-dim-chart-wrap {
+  min-height: 220px;
 }
 
 .stat-evidence-card {
@@ -4057,6 +4072,7 @@ select.fi { cursor: pointer; }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 0.75rem;
 }

@@ -4,7 +4,7 @@ import { downloadReport, listReports } from "../../api/reports";
 import { ReportInsightsModal } from "../../components/reports/ReportInsightsModal";
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("es-ES");
+  return new Date(value).toLocaleDateString("ca-ES");
 }
 
 export default function ReportsPage() {
@@ -26,12 +26,12 @@ export default function ReportsPage() {
     },
   });
 
-  if (isLoading) return <p>Cargando informes...</p>;
+  if (isLoading) return <p>Carregant informes…</p>;
 
   return (
     <div className="grid">
       <div className="page-header">
-        <h1 style={{ margin: 0 }}>Informes generados</h1>
+        <h1 style={{ margin: 0 }}>Informes generats</h1>
         <span className="chip">Historial</span>
       </div>
 
@@ -40,10 +40,10 @@ export default function ReportsPage() {
           <table className="reports-table">
             <thead>
               <tr>
-                <th>Titulo</th>
-                <th>Quien</th>
-                <th>Cuando</th>
-                <th>Periodo</th>
+                <th>Títol</th>
+                <th>Autor</th>
+                <th>Data</th>
+                <th>Període</th>
               </tr>
             </thead>
             <tbody>
@@ -60,7 +60,7 @@ export default function ReportsPage() {
               {(data ?? []).length === 0 && (
                 <tr>
                   <td colSpan={4} className="muted" style={{ textAlign: "center", padding: "1rem" }}>
-                    Aun no hay informes guardados.
+                    Encara no hi ha informes desats.
                   </td>
                 </tr>
               )}

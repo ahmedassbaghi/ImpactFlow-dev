@@ -57,9 +57,9 @@ def cohens_d_paired(
     Cohen's dz para datos pre-post emparejados (Cohen, 1988).
     Interpretación estándar:
       |d| < 0.2  → trivial
-      0.2–0.5    → pequeño
-      0.5–0.8    → medio
-      ≥ 0.8      → grande
+      0.2–0.5    → petit
+      0.5–0.8    → mig
+      ≥ 0.8      → gran
     """
     n = len(baseline_scores)
     if n < 2 or len(final_scores) != n:
@@ -78,11 +78,11 @@ def cohens_d_paired(
     if abs_d < 0.2:
         label = "trivial"
     elif abs_d < 0.5:
-        label = "pequeño"
+        label = "petit"
     elif abs_d < 0.8:
-        label = "medio"
+        label = "mig"
     else:
-        label = "grande"
+        label = "gran"
 
     return {
         "d": round(d, 3),
@@ -339,7 +339,16 @@ def _build_narrative(
         f"mitjana de {abs(abs_change):.1f} punts IPI ({abs(pct_change):.1f}% vs. baseline). "
     )
     if d is not None:
-        text += f"La mida de l'efecte és {d_label} (d={d:.2f}). "
+        label_ca = {
+            "trivial": "trivial",
+            "petit": "petit",
+            "pequeño": "petit",
+            "mig": "mig",
+            "medio": "mig",
+            "gran": "gran",
+            "grande": "gran",
+        }.get(d_label or "", d_label or "—")
+        text += f"La mida de l'efecte és {label_ca} (d={d:.2f}). "
     if p is not None:
         if p < 0.05:
             text += f"La millora és estadísticament significativa (p={p:.3f}). "

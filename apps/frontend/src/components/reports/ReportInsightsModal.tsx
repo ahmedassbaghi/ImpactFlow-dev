@@ -39,7 +39,7 @@ export function ReportInsightsModal({
   content,
   onClose,
   onSave,
-  saveLabel = "Guardar",
+  saveLabel = "Desar",
   saving = false,
 }: ReportInsightsModalProps) {
   if (!open) return null;
@@ -52,55 +52,55 @@ export function ReportInsightsModal({
           <div style={{ display: "flex", gap: "0.55rem" }}>
             {onSave && (
               <button onClick={onSave} disabled={saving}>
-                {saving ? "Guardando..." : saveLabel}
+                {saving ? "Desant…" : saveLabel}
               </button>
             )}
             <button className="btn-secondary" onClick={onClose}>
-              Cerrar
+              Tancar
             </button>
           </div>
         </div>
 
-        {!content && <div className="empty-box">No hay contenido para mostrar.</div>}
+        {!content && <div className="empty-box">No hi ha contingut per mostrar.</div>}
 
         {content && (
           <div className="grid">
             <div className="grid grid-3">
               <div className="card">
-                <h4>Evaluaciones</h4>
+                <h4>Avaluacions</h4>
                 <div className="metric-value">{content.headline_metrics?.evaluations ?? 0}</div>
               </div>
               <div className="card">
-                <h4>Mejora</h4>
+                <h4>Millora</h4>
                 <div className="metric-value">{content.headline_metrics?.improvement_pct ?? 0}%</div>
               </div>
               <div className="card">
-                <h4>Retencion</h4>
+                <h4>Retenció</h4>
                 <div className="metric-value">{content.headline_metrics?.retention_rate ?? 0}%</div>
               </div>
             </div>
             <div className="grid grid-2">
               <div className="card">
-                <h4>Calidad de sesiones</h4>
+                <h4>Qualitat de sessions</h4>
                 <div className="dash-row">
-                  <span>Evidencia completa</span>
+                  <span>Evidència completa</span>
                   <strong>{Math.round((content.session_quality?.evidence_completeness ?? 0) * 100)}%</strong>
                 </div>
                 <div className="dash-row">
-                  <span>Asistencia efectiva</span>
+                  <span>Assistència efectiva</span>
                   <strong>{Math.round((content.session_quality?.attendance_present_rate ?? 0) * 100)}%</strong>
                 </div>
                 <div className="dash-row">
-                  <span>Mood medio</span>
-                  <strong>{content.session_quality?.avg_mood ?? "-"}</strong>
+                  <span>Estat d&apos;ànim mitjà</span>
+                  <strong>{content.session_quality?.avg_mood ?? "—"}</strong>
                 </div>
                 <div className="dash-row">
-                  <span>Sentimiento medio</span>
-                  <strong>{content.session_quality?.avg_sentiment ?? "-"}</strong>
+                  <span>Sentiment mitjà</span>
+                  <strong>{content.session_quality?.avg_sentiment ?? "—"}</strong>
                 </div>
               </div>
               <div className="card">
-                <h4>Distribucion de riesgo</h4>
+                <h4>Distribució de risc</h4>
                 {Object.entries(content.risk_distribution ?? {}).map(([key, value]) => (
                   <div key={key} className="dash-row">
                     <span>{key}</span>
@@ -111,36 +111,36 @@ export function ReportInsightsModal({
             </div>
             {content.goals_summary && (
               <div className="card">
-                <h4>Microobjetivos (RBM)</h4>
+                <h4>Microobjectius (RBM)</h4>
                 <div className="dash-row">
-                  <span>Objetivos asignados</span>
+                  <span>Objectius assignats</span>
                   <strong>{content.goals_summary.assigned_goals ?? 0}</strong>
                 </div>
                 <div className="dash-row">
-                  <span>Objetivos completados</span>
+                  <span>Objectius completats</span>
                   <strong>{content.goals_summary.completed_goals ?? 0}</strong>
                 </div>
                 <div className="dash-row">
-                  <span>Goal Completion Rate</span>
+                  <span>Taxa de compliment</span>
                   <strong>{Math.round((content.goals_summary.goal_completion_rate ?? 0) * 100)}%</strong>
                 </div>
                 <div className="dash-row">
-                  <span>On-Time Completion Rate</span>
+                  <span>Compliment en termini</span>
                   <strong>{Math.round((content.goals_summary.on_time_completion_rate ?? 0) * 100)}%</strong>
                 </div>
                 <div className="dash-row">
-                  <span>Tiempo medio de logro</span>
+                  <span>Temps mitjà d&apos;assoliment</span>
                   <strong>
                     {content.goals_summary.avg_time_to_completion_days == null
-                      ? "-"
-                      : `${content.goals_summary.avg_time_to_completion_days} dias`}
+                      ? "—"
+                      : `${content.goals_summary.avg_time_to_completion_days} dies`}
                   </strong>
                 </div>
               </div>
             )}
             <div className="card">
               <h4>Narrativa</h4>
-              <p className="insight-box">{content.narrative ?? "Sin narrativa disponible."}</p>
+              <p className="insight-box">{content.narrative ?? "Sense narrativa disponible."}</p>
               <div className="grid">
                 {(content.key_statements ?? []).map((statement) => (
                   <div key={statement} className="dash-row">

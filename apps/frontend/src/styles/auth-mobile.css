@@ -11,7 +11,12 @@
   flex-direction: column;
   font-family: "Nunito", system-ui, sans-serif;
   color: #fff;
-  background-color: var(--narinan-base);
+  background: linear-gradient(
+    155deg,
+    var(--narinan-deep) 0%,
+    var(--narinan-base) 42%,
+    #a04e0e 100%
+  );
   position: relative;
   overflow: hidden;
 }
@@ -72,13 +77,72 @@
   animation: auth-drift-d 18s ease-in-out infinite alternate;
 }
 
+/* Haz de luz diagonal — atravessa la pantalla (inferior dreta → superior esquerra) */
+.auth-bg-beam {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 100% 100%,
+    rgba(255, 255, 255, 0.22) 0%,
+    transparent 22%
+  );
+}
+
+.auth-bg-beam::before,
+.auth-bg-beam::after {
+  content: "";
+  position: absolute;
+  width: 220vmax;
+  right: -18%;
+  bottom: -8%;
+  transform-origin: 100% 100%;
+  transform: rotate(-38deg);
+}
+
+/* Núcli del feix */
+.auth-bg-beam::before {
+  height: 11vmin;
+  min-height: 52px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 36%,
+    rgba(255, 252, 245, 0.45) 46%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 252, 245, 0.45) 54%,
+    rgba(255, 255, 255, 0.1) 64%,
+    transparent 100%
+  );
+  filter: blur(6px);
+  mix-blend-mode: screen;
+}
+
+/* Corona suau del feix */
+.auth-bg-beam::after {
+  height: 38vmin;
+  min-height: 160px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 245, 220, 0.12) 32%,
+    rgba(255, 250, 235, 0.38) 47%,
+    rgba(255, 250, 235, 0.38) 53%,
+    rgba(255, 245, 220, 0.12) 68%,
+    transparent 100%
+  );
+  filter: blur(32px);
+  opacity: 0.95;
+}
+
 .auth-bg-vignette {
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    ellipse 120% 80% at 50% 40%,
-    transparent 35%,
-    rgba(60, 30, 5, 0.35) 100%
+    ellipse 120% 85% at 50% 42%,
+    transparent 36%,
+    rgba(60, 30, 5, 0.34) 100%
   );
 }
 

@@ -650,7 +650,7 @@ function MonteCarloSROICard({
         </button>
       </div>
       <p id="mc-cost-hint" className="adv-sroi-kpi-hint" style={{ margin: 0 }}>
-        El cost es recalcula a cada simulació: base fixa 45 €/part./mes + 5 €/sessió efectiva (model NGO voluntariat).
+        El cost es recalcula a cada simulació: base fixa 45 €/part./mes + 10 €/sessió efectiva.
       </p>
 
       <div className="adv-mc-headline">

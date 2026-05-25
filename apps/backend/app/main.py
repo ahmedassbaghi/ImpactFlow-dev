@@ -2560,7 +2560,7 @@ async def analytics_cost_effectiveness(
         raise HTTPException(status_code=400, detail="period_end must be greater than or equal to period_start")
 
     from app.services.program_sroi_metrics import (
-        OPERATING_COST_PER_SESSION_EUR,
+        MARGINAL_COST_PER_SESSION_EUR,
         period_operating_cost_eur,
     )
 
@@ -2642,12 +2642,13 @@ async def analytics_cost_effectiveness(
             },
             "period_investment": {
                 "n_sessions": n_sessions_period,
-                "cost_per_session_eur": OPERATING_COST_PER_SESSION_EUR,
+                "cost_per_session_eur": MARGINAL_COST_PER_SESSION_EUR,
                 "total_cost_eur": total_cost_eur,
                 "auto_calculated": use_auto_period,
             },
             "comparator_investment": {
                 "n_sessions": n_sessions_comparator,
+                "cost_per_session_eur": MARGINAL_COST_PER_SESSION_EUR,
                 "total_cost_eur": comparator_cost_eur,
                 "auto_calculated": use_auto_comparator,
             },
@@ -2717,12 +2718,13 @@ async def analytics_cost_effectiveness(
         },
         "period_investment": {
             "n_sessions": n_sessions_period,
-            "cost_per_session_eur": OPERATING_COST_PER_SESSION_EUR,
+            "cost_per_session_eur": MARGINAL_COST_PER_SESSION_EUR,
             "total_cost_eur": round(total_cost_eur, 2),
             "auto_calculated": use_auto_period,
         },
         "comparator_investment": {
             "n_sessions": n_sessions_comparator,
+            "cost_per_session_eur": MARGINAL_COST_PER_SESSION_EUR,
             "total_cost_eur": round(comparator_cost_eur, 2),
             "auto_calculated": use_auto_comparator,
         },

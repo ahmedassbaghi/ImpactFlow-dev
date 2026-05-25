@@ -82,7 +82,7 @@ export default function OverviewPage() {
   const actions =
     role === "coordinator" || role === "admin"
       ? [
-          { to: "/coordinator/dashboard",   icon: LayoutDashboard, title: "Dashboard",           desc: "Mètriques del programa i anàlisi estadística",  primary: true },
+          { to: "/coordinator/dashboard",   icon: LayoutDashboard, title: "Tauler analític",     desc: "Mètriques del programa i anàlisi estadística",  primary: true },
           { to: "/coordinator/participants",icon: Users,           title: "Participants",         desc: "Gestiona i segueix el progrés individual" },
           { to: "/professional/session-logger", icon: Zap,        title: "Registrar sessió",     desc: "Afegeix observacions de sessió ràpidament" },
           { to: "/coordinator/reports",     icon: BarChart3,       title: "Informes",             desc: "Genera informes trimestrals per a donants" },

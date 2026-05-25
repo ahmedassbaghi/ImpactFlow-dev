@@ -14,6 +14,7 @@ export default function AuthScreenLayout({ children }: Props) {
         <span className="auth-bg-blob auth-bg-blob--2" />
         <span className="auth-bg-blob auth-bg-blob--3" />
         <span className="auth-bg-blob auth-bg-blob--4" />
+        <span className="auth-bg-beam" />
         <span className="auth-bg-vignette" />
       </div>
 

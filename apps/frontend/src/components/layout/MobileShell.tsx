@@ -1,6 +1,5 @@
 import {
   ArrowLeft,
-  Heart,
   History,
   LogOut,
   TrendingUp,
@@ -23,10 +22,6 @@ const VOLUNTEER_LINKS = [
   { to: "/voluntari/seguiment", label: "Avaluació", icon: UserCheck },
 ];
 
-const DONOR_LINKS = [
-  { to: "/donor/impact-portal", label: "Impacte", icon: Heart },
-];
-
 const VOL_ROOT_PATHS = [
   "/professional/session-logger",
   "/coordinator/sessions",
@@ -43,8 +38,7 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
   const isVolunteer = role === "professional";
   const isDonor = role === "donor" || role === "viewer";
 
-  const links =
-    isVolunteer ? VOLUNTEER_LINKS : isDonor ? DONOR_LINKS : [];
+  const links = isVolunteer ? VOLUNTEER_LINKS : [];
 
   const homePath = isDonor ? "/donor/impact-portal" : "/professional/session-logger";
 
