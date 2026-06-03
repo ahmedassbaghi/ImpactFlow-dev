@@ -7,8 +7,12 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { listAcademicYears } from "../../api/academicYears";
 import { useAuthStore } from "../../stores/authStore";
+import { useAcademicYearStore } from "../../stores/academicYearStore";
 import { PageTransition } from "../common/PageTransition";
 import { QuickLoggerFAB } from "../sessions/QuickLoggerFAB";
 import { AppShell as AppShellDesktop } from "./AppShell";
@@ -37,6 +41,17 @@ export function MobileShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isVolunteer = role === "professional";
   const isDonor = role === "donor" || role === "viewer";
+  const setYears = useAcademicYearStore((s) => s.setYears);
+
+  const { data: academicYears } = useQuery({
+    queryKey: ["academic-years"],
+    queryFn: listAcademicYears,
+    enabled: isVolunteer,
+  });
+
+  useEffect(() => {
+    if (academicYears?.length) setYears(academicYears);
+  }, [academicYears, setYears]);
 
   const links = isVolunteer ? VOLUNTEER_LINKS : [];
 

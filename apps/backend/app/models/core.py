@@ -76,6 +76,23 @@ class Program(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class AcademicYear(Base):
+    __tablename__ = "academic_years"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("organization_id", "title"),)
+
+
 class UserParticipantAssignment(Base):
     __tablename__ = "user_participant_assignments"
 
@@ -104,6 +121,8 @@ class Participant(Base):
     consent_given: Mapped[bool] = mapped_column(Boolean, default=False)
     is_control_group: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    current_grade_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    current_grade_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -114,10 +133,32 @@ class ProgramEnrollment(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
     participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
     enrolled_at: Mapped[date] = mapped_column(Date, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    __table_args__ = (UniqueConstraint("program_id", "participant_id"),)
+    __table_args__ = (UniqueConstraint("program_id", "participant_id", "academic_year_id"),)
+
+
+class ParticipantGradeHistory(Base):
+    __tablename__ = "participant_grade_history"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    academic_year_id: Mapped[str] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    grade_key: Mapped[str] = mapped_column(String, nullable=False)
+    grade_label: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="enrolled")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint("participant_id", "academic_year_id"),)
 
 
 class BaselineAssessment(Base):
@@ -126,6 +167,9 @@ class BaselineAssessment(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
     program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
     assessed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     assessment_date: Mapped[date] = mapped_column(Date, nullable=False)
     reading_level: Mapped[Optional[int]] = mapped_column(Integer)
@@ -151,6 +195,9 @@ class PeriodicAssessment(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
     program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
     assessed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     assessment_date: Mapped[date] = mapped_column(Date, nullable=False)
     period_label: Mapped[str] = mapped_column(String, nullable=False)
@@ -180,6 +227,9 @@ class Session(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
     professional_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     session_date: Mapped[date] = mapped_column(Date, nullable=False)
     session_time: Mapped[Optional[str]] = mapped_column(String)  # HH:MM (24h)
@@ -277,9 +327,49 @@ class AttendanceRecord(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
     program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
     session_id: Mapped[Optional[str]] = mapped_column(ForeignKey("sessions.id"))
     date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class TeachingAssignment(Base):
+    __tablename__ = "teaching_assignments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    program_id: Mapped[str] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), nullable=False)
+    academic_year_id: Mapped[str] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="CASCADE"), nullable=False
+    )
+    school_id: Mapped[Optional[str]] = mapped_column(ForeignKey("schools.id"), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    source: Mapped[str] = mapped_column(String, default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "participant_id", "program_id", "academic_year_id"),
+    )
+
+
+class ImportLog(Base):
+    __tablename__ = "import_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    imported_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    source_filename: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="completed")
+    raw_input_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class MicroGoal(Base):
@@ -344,6 +434,9 @@ class Report(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     program_id: Mapped[Optional[str]] = mapped_column(ForeignKey("programs.id"))
+    academic_year_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("academic_years.id", ondelete="SET NULL"), nullable=True
+    )
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     report_type: Mapped[str] = mapped_column(String, nullable=False)
     period_start: Mapped[date] = mapped_column(Date, nullable=False)

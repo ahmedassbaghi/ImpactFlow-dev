@@ -99,7 +99,7 @@ function SessionDetailDrawer({
 }: {
   session: SessionListItem;
   programName: (id: string) => string;
-  participantName: (id: string) => string;
+  participantName: (id: string, session?: SessionListItem) => string;
   onClose: () => void;
 }) {
   const { data: observations = [], isLoading } = useQuery({

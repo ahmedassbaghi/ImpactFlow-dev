@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import { academicYearQueryParam } from "../stores/academicYearStore";
 
 export type Participant = {
   id: string;
@@ -11,18 +12,22 @@ export type Participant = {
   school_id: string;
   school_name?: string;
   school_abbreviation?: string;
+  current_grade_key?: string | null;
+  current_grade_label?: string | null;
 };
 
 export async function listParticipants(params?: {
   programId?: string;
   schoolId?: string;
   notInProgram?: string;
+  academicYearId?: string;
 }): Promise<Participant[]> {
   const { data } = await apiClient.get<Participant[]>("/participants", {
     params: {
       program_id: params?.programId,
       school_id: params?.schoolId,
       not_in_program: params?.notInProgram,
+      academic_year_id: params?.academicYearId ?? academicYearQueryParam().academic_year_id,
     },
   });
   return data;
@@ -43,6 +48,23 @@ export async function previewNextCode(schoolId: string): Promise<string> {
   return data.code;
 }
 
+export type GradeHistoryEntry = {
+  id: string;
+  academic_year_id: string;
+  academic_year_title?: string;
+  grade_key: string;
+  grade_label: string;
+  status: string;
+  notes?: string | null;
+};
+
+export async function getParticipantGradeHistory(participantId: string): Promise<GradeHistoryEntry[]> {
+  const { data } = await apiClient.get<GradeHistoryEntry[]>(
+    `/participants/${participantId}/grade-history`
+  );
+  return data;
+}
+
 export async function createParticipant(payload: {
   program_id?: string;
   school_id: string;
@@ -54,6 +76,7 @@ export async function createParticipant(payload: {
   enrollment_date: string;
   consent_given: boolean;
   is_control_group: boolean;
+  grade_key?: string;
 }) {
   const { data } = await apiClient.post("/participants", payload);
   return data;

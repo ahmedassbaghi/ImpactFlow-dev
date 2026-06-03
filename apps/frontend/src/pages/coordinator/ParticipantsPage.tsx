@@ -10,6 +10,7 @@ import { PremiumSelect } from "../../components/voluntari/PremiumSelect";
 import { VolunteerParticipantRow } from "../../components/voluntari/VolunteerParticipantRow";
 import { Search } from "lucide-react";
 import { createParticipant, listParticipants, previewNextCode } from "../../api/participants";
+import { listGradeLevels } from "../../api/gradeLevels";
 import { listPrograms } from "../../api/programs";
 import { listSchools } from "../../api/schools";
 import { SchoolBadge } from "../../components/common/SchoolBadge";
@@ -35,6 +36,7 @@ const defaultDraft = {
   nationality: "",
   enrollment_date: new Date().toISOString().slice(0, 10),
   consent_given: true,
+  grade_key: "",
 };
 
 function Modal({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
@@ -59,6 +61,7 @@ export default function ParticipantsPage() {
   const [filterSchool, setFilterSchool] = useState("");
   const { data: programs } = useQuery({ queryKey: ["programs"], queryFn: () => listPrograms(true) });
   const { data: schools } = useQuery({ queryKey: ["schools"], queryFn: listSchools });
+  const { data: gradeLevels } = useQuery({ queryKey: ["grade-levels"], queryFn: listGradeLevels });
   const { data: participants, isLoading } = useQuery({
     queryKey: ["participants", filterProgram, filterSchool],
     queryFn: () =>
@@ -111,6 +114,7 @@ export default function ParticipantsPage() {
       enrollment_date: draft.enrollment_date,
       consent_given: draft.consent_given,
       is_control_group: false,
+      grade_key: draft.grade_key || undefined,
     });
   };
 
@@ -292,6 +296,7 @@ export default function ParticipantsPage() {
                   <th>Codi</th>
                   <th>Nom</th>
                   <th>Escola</th>
+                  <th>Curs</th>
                   <th>Programa</th>
                   <th>Nacionalitat</th>
                   <th>Data d'alta</th>
@@ -318,6 +323,9 @@ export default function ParticipantsPage() {
                     </td>
                     <td data-label="Escola">
                       <SchoolBadge abbreviation={p.school_abbreviation} name={p.school_name} />
+                    </td>
+                    <td className="text-secondary" data-label="Curs">
+                      {p.current_grade_label ?? "—"}
                     </td>
                     <td className="text-secondary" data-label="Programa">
                       {filterProgram ? programName(filterProgram) : "—"}
@@ -490,6 +498,23 @@ export default function ParticipantsPage() {
                 onChange={(e) => setDraft((p) => ({ ...p, nationality: e.target.value }))}
                 placeholder="Ex: Marroc"
               />
+            </div>
+
+            <div className="form-field">
+              <label className="form-label" htmlFor="participant-grade">Curs / nivell</label>
+              <select
+                id="participant-grade"
+                className="form-select"
+                value={draft.grade_key}
+                onChange={(e) => setDraft((p) => ({ ...p, grade_key: e.target.value }))}
+              >
+                <option value="">— Sense assignar —</option>
+                {(gradeLevels ?? []).map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="form-field" style={{ gridColumn: "1 / -1" }}>

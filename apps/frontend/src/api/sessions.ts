@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import { academicYearQueryParam } from "../stores/academicYearStore";
 
 export type GoalProgressPayload = {
   micro_goal_id: string;
@@ -28,6 +29,7 @@ export type ObservationPayload = {
 
 export type CreateSessionPayload = {
   program_id: string;
+  academic_year_id?: string;
   session_date: string;
   session_time?: string;
   session_type: string;
@@ -59,7 +61,11 @@ export type SessionListItem = {
 };
 
 export async function createSession(payload: CreateSessionPayload) {
-  const { data } = await apiClient.post("/sessions", payload);
+  const yearParam = academicYearQueryParam();
+  const { data } = await apiClient.post("/sessions", {
+    ...payload,
+    academic_year_id: payload.academic_year_id ?? yearParam.academic_year_id,
+  });
   return data;
 }
 
@@ -88,7 +94,9 @@ export async function listSessions(filters?: {
   date_from?: string;
   date_to?: string;
 }): Promise<SessionListItem[]> {
-  const { data } = await apiClient.get<SessionListItem[]>("/sessions", { params: filters });
+  const { data } = await apiClient.get<SessionListItem[]>("/sessions", {
+    params: { ...filters, ...academicYearQueryParam() },
+  });
   return data;
 }
 

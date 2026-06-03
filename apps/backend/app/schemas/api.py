@@ -66,6 +66,7 @@ class ParticipantCreate(BaseModel):
     enrollment_date: date
     consent_given: bool = False
     is_control_group: bool = False
+    grade_key: Optional[str] = None
 
 
 class ParticipantUpdate(BaseModel):
@@ -89,6 +90,8 @@ class ParticipantOut(BaseModel):
     school_id: str
     school_name: Optional[str] = None
     school_abbreviation: Optional[str] = None
+    current_grade_key: Optional[str] = None
+    current_grade_label: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -200,6 +203,7 @@ class SessionMicroGoalCompletionInput(BaseModel):
 
 class SessionCreate(BaseModel):
     program_id: str
+    academic_year_id: Optional[str] = None
     session_date: date
     session_time: Optional[str] = Field(
         default=None,
@@ -217,6 +221,7 @@ class SessionCreate(BaseModel):
 class SessionOut(BaseModel):
     id: str
     program_id: str
+    academic_year_id: Optional[str] = None
     session_date: date
     session_time: Optional[str] = None
     session_type: str

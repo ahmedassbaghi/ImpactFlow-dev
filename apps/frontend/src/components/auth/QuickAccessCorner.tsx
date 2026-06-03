@@ -1,13 +1,23 @@
 import { useMutation } from "@tanstack/react-query";
 import { ChevronDown, Zap } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { fetchHealth } from "../../api/health";
 import { useNavigate } from "react-router-dom";
 import { login } from "../../api/auth";
 import { DEMO_PROFILES, getRoleRedirect } from "../../auth/demoProfiles";
 import { useAuthStore } from "../../stores/authStore";
 
 export default function QuickAccessCorner() {
+  const [demoEnabled, setDemoEnabled] = useState(false);
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    fetchHealth()
+      .then((h) => setDemoEnabled(h.demo_mode))
+      .catch(() => setDemoEnabled(false));
+  }, []);
+
+  if (!demoEnabled) return null;
   const [activeRole, setActiveRole] = useState<string | null>(null);
   const menuId = useId();
   const navigate = useNavigate();

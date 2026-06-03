@@ -20,6 +20,8 @@ import ProgramsPage from "./pages/coordinator/ProgramsPage";
 import SessionsHistoryPage from "./pages/coordinator/SessionsHistoryPage";
 import AdvancedAnalyticsPage from "./pages/coordinator/AdvancedAnalyticsPage";
 import DataSimulationPage from "./pages/coordinator/DataSimulationPage";
+import AcademicYearsPage from "./pages/coordinator/AcademicYearsPage";
+import DataImportPage from "./pages/coordinator/DataImportPage";
 import ProgressPage from "./pages/voluntari/ProgressPage";
 import SeguimentPage from "./pages/voluntari/SeguimentPage";
 import { useAuthStore } from "./stores/authStore";
@@ -196,6 +198,22 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
             <UsersRolesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/academic-years"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <AcademicYearsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/coordinator/import"
+        element={
+          <ProtectedRoute allowedRoles={["coordinator", "admin"]}>
+            <DataImportPage />
           </ProtectedRoute>
         }
       />

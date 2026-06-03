@@ -143,7 +143,7 @@ export default function ImpactPortalPage() {
   const ci = effect?.confidence_interval_95 ?? null;
   const narrative = effect?.narrative ?? donor?.narrative ?? null;
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8012/api/v1";
+  const apiBase = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
   const handleDownloadEvidence = () => {
     if (!programId) return;

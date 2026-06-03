@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.websockets import WebSocket, WebSocketDisconnect
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.algorithms.dropout_model import predict_dropout_probability
@@ -29,6 +29,7 @@ from app.analytics.reliability import compute_inter_rater_reliability
 from app.config import get_settings
 from app.database import Base, engine, get_db
 from app.migrations.migrate_v2 import run_migrations
+from app.migrations.migrate_v3 import run_migrations_v3
 from app.models import (
     AttendanceRecord,
     BaselineAssessment,
@@ -50,9 +51,16 @@ from app.models import (
     User,
     UserParticipantAssignment,
 )
+from app.routes.academic_years import router as academic_years_router
 from app.routes.auth import router as auth_router
 from app.routes.data_simulation import router as simulation_router
+from app.routes.grade_history import router as grade_history_router
+from app.routes.demo import router as demo_router
+from app.routes.imports import router as imports_router
 from app.routes.schools_and_assignments import router as schools_router
+from app.services.academic_year_context import resolve_academic_year_id
+from app.constants.grade_levels import is_valid_grade_key, label_for_key
+from app.models import AcademicYear, ParticipantGradeHistory
 from app.routes.schools_and_assignments import compute_ngo_sroi_calculator, compute_sroi_for_program
 from app.schemas.api import (
     AssessmentInput,
@@ -115,9 +123,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -129,11 +138,16 @@ async def startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await run_migrations(engine)
+    await run_migrations_v3(engine)
 
 
 app.include_router(auth_router)
 app.include_router(schools_router)
 app.include_router(simulation_router)
+app.include_router(academic_years_router)
+app.include_router(grade_history_router)
+app.include_router(imports_router)
+app.include_router(demo_router)
 
 
 @app.get("/")
@@ -141,8 +155,21 @@ def read_root():
     return {"status": "ok", "message": "Welcome to ImpactFlow API"}
 
 @app.get("/api/v1/health")
-def health_check():
-    return {"status": "healthy"}
+async def health_check():
+    db_ok = False
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "database": "ok" if db_ok else "error",
+        "environment": settings.environment,
+        "websocket": settings.websocket_enabled,
+        "demo_mode": settings.demo_mode_enabled,
+    }
 
 
 @app.get(f"{settings.api_prefix}/users", response_model=list[UserOut])
@@ -341,17 +368,25 @@ async def list_sessions(
     program_id: str | None = None,
     participant_id: str | None = None,
     school_id: str | None = None,
+    academic_year_id: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[SessionListOut]:
+    year_id = await resolve_academic_year_id(
+        db, current_user.organization_id, academic_year_id
+    )
     query = (
         select(Session)
         .join(Program, Program.id == Session.program_id)
         .where(Program.organization_id == current_user.organization_id)
     )
+    if year_id:
+        query = query.where(
+            (Session.academic_year_id == year_id) | (Session.academic_year_id.is_(None))
+        )
     if current_user.role == "professional":
         assign_q = await db.execute(
             select(UserParticipantAssignment.participant_id).where(
@@ -440,21 +475,43 @@ async def list_sessions(
 async def list_participants(
     program_id: str | None = None,
     school_id: str | None = None,
+    academic_year_id: str | None = None,
     not_in_program: str | None = Query(None, description="Program ID — return participants not actively enrolled"),
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[ParticipantOut]:
+    year_id = await resolve_academic_year_id(
+        db, current_user.organization_id, academic_year_id
+    )
     query = select(Participant).where(
         Participant.organization_id == current_user.organization_id,
         Participant.active == True,
     )
     if program_id:
-        query = query.join(
-            ProgramEnrollment, ProgramEnrollment.participant_id == Participant.id
-        ).where(
+        enroll_filter = [
             ProgramEnrollment.program_id == program_id,
             ProgramEnrollment.active == True,
+        ]
+        if year_id:
+            enroll_filter.append(
+                (ProgramEnrollment.academic_year_id == year_id)
+                | (ProgramEnrollment.academic_year_id.is_(None))
+            )
+        query = query.join(
+            ProgramEnrollment, ProgramEnrollment.participant_id == Participant.id
+        ).where(*enroll_filter)
+    elif year_id:
+        enrolled_subq = select(ProgramEnrollment.participant_id).where(
+            (ProgramEnrollment.academic_year_id == year_id)
+            | (ProgramEnrollment.academic_year_id.is_(None)),
+            ProgramEnrollment.active == True,
+        )
+        grade_subq = select(ParticipantGradeHistory.participant_id).where(
+            ParticipantGradeHistory.academic_year_id == year_id
+        )
+        query = query.where(
+            Participant.id.in_(enrolled_subq) | Participant.id.in_(grade_subq)
         )
     if not_in_program:
         await get_org_program(db, not_in_program, current_user.organization_id)
@@ -532,12 +589,16 @@ async def enroll_participant(
         )
     )
     enroll = existing.scalar_one_or_none()
+    year_id = await resolve_academic_year_id(db, current_user.organization_id, None)
     if enroll:
         enroll.active = True
+        if year_id and not enroll.academic_year_id:
+            enroll.academic_year_id = year_id
     else:
         db.add(ProgramEnrollment(
             program_id=program_id,
             participant_id=payload.participant_id,
+            academic_year_id=year_id,
             enrolled_at=date.today(),
             active=True,
         ))
@@ -621,12 +682,29 @@ async def create_participant(
     )
     db.add(participant)
     await db.flush()
+    year_id = await resolve_academic_year_id(db, current_user.organization_id, None)
+    if payload.grade_key:
+        if not is_valid_grade_key(payload.grade_key):
+            raise HTTPException(status_code=400, detail="Nivell no vàlid")
+        label = label_for_key(payload.grade_key) or payload.grade_key
+        participant.current_grade_key = payload.grade_key
+        participant.current_grade_label = label
+        if year_id:
+            db.add(
+                ParticipantGradeHistory(
+                    participant_id=participant.id,
+                    academic_year_id=year_id,
+                    grade_key=payload.grade_key,
+                    grade_label=label,
+                )
+            )
     if payload.program_id:
         await get_org_program(db, payload.program_id, current_user.organization_id)
         db.add(
             ProgramEnrollment(
                 program_id=payload.program_id,
                 participant_id=participant.id,
+                academic_year_id=year_id,
                 enrolled_at=payload.enrollment_date,
                 active=True,
             )
@@ -885,8 +963,12 @@ async def create_session(
     current_user: User = Depends(require_roles("admin", "coordinator", "professional")),
 ) -> SessionOut:
     parsed = await parse_qualitative_note(payload.notes or "")
+    year_id = payload.academic_year_id or await resolve_academic_year_id(
+        db, current_user.organization_id, None
+    )
     session = Session(
         program_id=payload.program_id,
+        academic_year_id=year_id,
         professional_id=current_user.id,
         session_date=payload.session_date,
         session_time=payload.session_time,
@@ -962,6 +1044,7 @@ async def create_session(
             AttendanceRecord(
                 participant_id=obs.participant_id,
                 program_id=payload.program_id,
+                academic_year_id=year_id,
                 session_id=session.id,
                 date=payload.session_date,
                 status=obs.attendance_status,
@@ -1038,6 +1121,7 @@ async def create_session(
     return SessionOut(
         id=session.id,
         program_id=session.program_id,
+        academic_year_id=session.academic_year_id,
         session_date=session.session_date,
         session_time=session.session_time,
         session_type=session.session_type,
@@ -1065,6 +1149,7 @@ async def get_session(
     return SessionOut(
         id=session.id,
         program_id=session.program_id,
+        academic_year_id=session.academic_year_id,
         session_date=session.session_date,
         session_time=session.session_time,
         session_type=session.session_type,
@@ -3496,65 +3581,68 @@ async def analytics_evidence_export(
     }
 
 
-@app.websocket(f"{settings.api_prefix}/ws/alerts/{{organization_id}}")
-async def ws_alerts(websocket: WebSocket, organization_id: str):
-    """WebSocket — alertes en temps real per participants d'alt risc."""
-    await websocket.accept()
-    try:
-        while True:
-            async with engine.connect() as raw_conn:
-                from sqlalchemy.ext.asyncio import AsyncSession as _WsSession
-                async with _WsSession(raw_conn) as ws_db:
-                    since = date.today() - timedelta(days=7)
-                    risk_q = await ws_db.execute(
-                        select(
-                            PeriodicAssessment.participant_id,
-                            PeriodicAssessment.risk_level,
-                            PeriodicAssessment.risk_factors,
-                            PeriodicAssessment.assessment_date,
-                        )
-                        .join(Program, Program.id == PeriodicAssessment.program_id)
-                        .where(
-                            Program.organization_id == organization_id,
-                            PeriodicAssessment.risk_level == "high",
-                            PeriodicAssessment.assessment_date >= since,
-                        )
-                        .order_by(PeriodicAssessment.assessment_date.desc())
-                        .limit(20)
-                    )
-                    rows = risk_q.all()
+if settings.websocket_enabled:
 
-            now_iso = datetime.utcnow().isoformat()
-            if rows:
-                for row in rows:
-                    factors = []
-                    if row.risk_factors:
-                        try:
-                            factors = (
-                                json.loads(row.risk_factors)
-                                if isinstance(row.risk_factors, str)
-                                else row.risk_factors
-                            )
-                        except Exception:
-                            factors = []
-                    await websocket.send_json({
-                        "type": "risk_alert",
-                        "participant_id": row.participant_id,
-                        "risk_level": row.risk_level,
-                        "factors": factors,
-                        "timestamp": now_iso,
-                    })
-            else:
-                await websocket.send_json({
-                    "type": "heartbeat",
-                    "timestamp": now_iso,
-                    "message": "No high-risk alerts in the last 7 days",
-                })
-            await asyncio.sleep(30)
-    except WebSocketDisconnect:
-        pass
-    except Exception:
+    @app.websocket(f"{settings.api_prefix}/ws/alerts/{{organization_id}}")
+    async def ws_alerts(websocket: WebSocket, organization_id: str):
+        """WebSocket — alertes en temps real per participants d'alt risc."""
+        await websocket.accept()
         try:
-            await websocket.close()
-        except Exception:
+            while True:
+                async with engine.connect() as raw_conn:
+                    from sqlalchemy.ext.asyncio import AsyncSession as _WsSession
+
+                    async with _WsSession(raw_conn) as ws_db:
+                        since = date.today() - timedelta(days=7)
+                        risk_q = await ws_db.execute(
+                            select(
+                                PeriodicAssessment.participant_id,
+                                PeriodicAssessment.risk_level,
+                                PeriodicAssessment.risk_factors,
+                                PeriodicAssessment.assessment_date,
+                            )
+                            .join(Program, Program.id == PeriodicAssessment.program_id)
+                            .where(
+                                Program.organization_id == organization_id,
+                                PeriodicAssessment.risk_level == "high",
+                                PeriodicAssessment.assessment_date >= since,
+                            )
+                            .order_by(PeriodicAssessment.assessment_date.desc())
+                            .limit(20)
+                        )
+                        rows = risk_q.all()
+
+                now_iso = datetime.utcnow().isoformat()
+                if rows:
+                    for row in rows:
+                        factors = []
+                        if row.risk_factors:
+                            try:
+                                factors = (
+                                    json.loads(row.risk_factors)
+                                    if isinstance(row.risk_factors, str)
+                                    else row.risk_factors
+                                )
+                            except Exception:
+                                factors = []
+                        await websocket.send_json({
+                            "type": "risk_alert",
+                            "participant_id": row.participant_id,
+                            "risk_level": row.risk_level,
+                            "factors": factors,
+                            "timestamp": now_iso,
+                        })
+                else:
+                    await websocket.send_json({
+                        "type": "heartbeat",
+                        "timestamp": now_iso,
+                        "message": "No high-risk alerts in the last 7 days",
+                    })
+                await asyncio.sleep(30)
+        except WebSocketDisconnect:
             pass
+        except Exception:
+            try:
+                await websocket.close()
+            except Exception:
+                pass

@@ -14,9 +14,16 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     environment: str = "development"
     api_prefix: str = "/api/v1"
-    auth_bypass: bool = True
+    auth_bypass: bool = False
+    cors_origins: str = "http://localhost:5173"
+    websocket_enabled: bool = False
+    demo_mode_enabled: bool = False
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    if settings.environment == "production":
+        if settings.secret_key == "change-me-in-production" or len(settings.secret_key) < 32:
+            raise RuntimeError("SECRET_KEY must be set to a secure value (≥32 chars) in production")
+    return settings

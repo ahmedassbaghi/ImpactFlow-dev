@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import {
   getParticipant,
+  getParticipantGradeHistory,
   getParticipantEvolution,
   getParticipantRisk,
   getParticipantPredictionProbabilistic,
@@ -405,6 +406,12 @@ export default function ParticipantProfile() {
     retry: false,
   });
 
+  const gradeHistoryQ = useQuery({
+    queryKey: ["participant-grade-history", participantId],
+    queryFn: () => getParticipantGradeHistory(participantId!),
+    enabled: !!participantId,
+  });
+
   const enrolledProgramsQ = useQuery({
     queryKey: ["participant-programs", participantId],
     queryFn: () => getParticipantPrograms(participantId!),
@@ -764,6 +771,51 @@ export default function ParticipantProfile() {
           </div>
         </div>
       </div>
+
+      {!isVolunteer && (
+        <section
+          aria-labelledby="grade-history-heading"
+          style={{
+            background: "var(--surface-0)",
+            border: "1px solid var(--border)",
+            borderRadius: 14,
+            padding: "1rem 1.25rem",
+          }}
+        >
+          <h2 id="grade-history-heading" style={{ margin: "0 0 0.75rem", fontSize: "0.95rem", fontWeight: 800 }}>
+            Historial acadèmic
+          </h2>
+          {participant?.current_grade_label && (
+            <p style={{ margin: "0 0 0.5rem", fontSize: "0.88rem" }}>
+              Curs actual: <strong>{participant.current_grade_label}</strong>
+            </p>
+          )}
+          {gradeHistoryQ.isLoading ? (
+            <p style={{ margin: 0, color: "var(--text-secondary)" }}>Carregant…</p>
+          ) : (gradeHistoryQ.data?.length ?? 0) === 0 ? (
+            <p style={{ margin: 0, color: "var(--text-secondary)" }}>Sense historial de nivells.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Any escolar</th>
+                  <th>Nivell</th>
+                  <th>Estat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gradeHistoryQ.data!.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.academic_year_title ?? row.academic_year_id}</td>
+                    <td>{row.grade_label}</td>
+                    <td>{row.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
 
       {!isVolunteer && (
       <div

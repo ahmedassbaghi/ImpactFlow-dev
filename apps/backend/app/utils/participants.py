@@ -27,6 +27,8 @@ def participant_to_out(participant: Participant, school: School | None = None) -
         school_id=participant.school_id,
         school_name=school.name if school else None,
         school_abbreviation=school.abbreviation if school else None,
+        current_grade_key=getattr(participant, "current_grade_key", None),
+        current_grade_label=getattr(participant, "current_grade_label", None),
     )
 
 

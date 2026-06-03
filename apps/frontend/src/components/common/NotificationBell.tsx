@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bell, AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { fetchHealth } from "../../api/health";
 import { useAuthStore } from "../../stores/authStore";
 
 type Alert = {
@@ -13,9 +14,14 @@ type Alert = {
   message?: string;
 };
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8013/api/v1").replace(/\/$/, "");
-// API_BASE = ".../api/v1"  →  WS_BASE = "ws://.../api/v1"
-const WS_BASE = API_BASE.replace(/^http/i, (m: string) => (m.toLowerCase() === "https" ? "wss" : "ws"));
+function wsBaseFromApi(): string {
+  const apiBase = (import.meta.env.VITE_API_BASE_URL ?? "/api/v1").replace(/\/$/, "");
+  if (apiBase.startsWith("/")) {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${proto}://${window.location.host}${apiBase}`;
+  }
+  return apiBase.replace(/^http/i, (m: string) => (m.toLowerCase() === "https" ? "wss" : "ws"));
+}
 
 export function NotificationBell() {
   const userId = useAuthStore((s) => s.userId);
@@ -39,9 +45,15 @@ export function NotificationBell() {
     let backoff = 2000;
     const seen = new Set<string>();
 
-    const connect = () => {
+    const connect = async () => {
       if (cancelled) return;
-      const url = `${WS_BASE}/ws/alerts/${orgKey}`;
+      try {
+        const health = await fetchHealth();
+        if (!health.websocket) return;
+      } catch {
+        return;
+      }
+      const url = `${wsBaseFromApi()}/ws/alerts/${orgKey}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 

@@ -1,8 +1,10 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Atom,
   BarChart3,
   BookOpen,
   Building2,
+  CalendarDays,
   Command,
   FileText,
   FlaskConical,
@@ -15,11 +17,15 @@ import {
   Settings,
   Sun,
   Target,
+  Upload,
   Users,
   Zap,
 } from "lucide-react";
+import { useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { listAcademicYears } from "../../api/academicYears";
 import { useAuthStore } from "../../stores/authStore";
+import { useAcademicYearStore } from "../../stores/academicYearStore";
 import { useThemeStore } from "../../stores/themeStore";
 import { QuickLoggerFAB } from "../sessions/QuickLoggerFAB";
 import { CommandPalette } from "../common/CommandPalette";
@@ -56,6 +62,8 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
     { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
     { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
     { to: "/coordinator/gestio",             label: "Gestió",              icon: Settings },
+    { to: "/coordinator/academic-years",    label: "Anys escolars",       icon: CalendarDays },
+    { to: "/coordinator/import",            label: "Importar dades",      icon: Upload },
     { to: "/coordinator/landing",            label: "Web",                 icon: BookOpen },
   ],
   admin: [
@@ -71,6 +79,8 @@ const NAV_LINKS: Record<string, { to: string; label: string; icon: React.Element
     { to: "/coordinator/reports",            label: "Informes",            icon: FileText },
     { to: "/coordinator/users",              label: "Usuaris",             icon: Settings },
     { to: "/coordinator/gestio",             label: "Gestió",              icon: Settings },
+    { to: "/coordinator/academic-years",    label: "Anys escolars",       icon: CalendarDays },
+    { to: "/coordinator/import",            label: "Importar dades",      icon: Upload },
     { to: "/coordinator/landing",            label: "Web",                 icon: BookOpen },
     { to: "/admin/control-center",           label: "Admin",               icon: BookOpen },
   ],
@@ -90,6 +100,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const location  = useLocation();
   const theme  = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
+  const queryClient = useQueryClient();
+  const years = useAcademicYearStore((s) => s.years);
+  const selectedYearId = useAcademicYearStore((s) => s.selectedYearId);
+  const setYears = useAcademicYearStore((s) => s.setYears);
+  const setSelectedYearId = useAcademicYearStore((s) => s.setSelectedYearId);
 
   const logout = () => { clear(); navigate("/login"); };
 
@@ -97,6 +112,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const roleMeta = ROLE_META[role]  ?? ROLE_META.viewer;
   const avatarKey = userId ?? role;
   const isCoordinatorShell = role === "coordinator" || role === "admin";
+
+  const { data: academicYears } = useQuery({
+    queryKey: ["academic-years"],
+    queryFn: listAcademicYears,
+    enabled: isCoordinatorShell,
+  });
+
+  useEffect(() => {
+    if (academicYears?.length) setYears(academicYears);
+  }, [academicYears, setYears]);
+
+  const onYearChange = (yearId: string) => {
+    setSelectedYearId(yearId);
+    queryClient.invalidateQueries();
+  };
 
   return (
     <div className={`app-shell${isCoordinatorShell ? " app-shell--coordinator" : ""}`}>
@@ -126,6 +156,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Right side */}
         <div className="topnav-right">
+          {isCoordinatorShell && years.length > 0 && (
+            <label className="topnav-year-select">
+              <span className="sr-only">Any escolar</span>
+              <select
+                aria-label="Any escolar"
+                value={selectedYearId ?? ""}
+                onChange={(e) => onYearChange(e.target.value)}
+              >
+                {years.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.title}
+                    {y.is_current ? " (actual)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {/* Command palette opener */}
           <button
             className="topnav-cmd"
