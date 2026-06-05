@@ -4456,3 +4456,101 @@ select.fi { cursor: pointer; }
   text-align: center;
   padding: 24px 16px;
 }
+
+/*
+
+//////////////////////////////////////////////////////////////////////////
+
+  CAMBIOS ESTÉTICOS V3
+
+//////////////////////////////////////////////////////////////////////////
+
+*/
+
+/* ── Fix doble scroll dashboard ───────────────────────────── */
+@media (min-width: 981px) {
+  body {
+    overflow: hidden;
+  }
+
+  .shell-content {
+    height: 100%;
+    overflow-y: auto;
+  }
+}
+
+.page-container {
+  padding: 1.25rem;
+  box-sizing: border-box;
+}
+
+/* ── Enrollment modal — scroll fix + compact header ──────── */
+
+.enroll-modal {
+  width: min(520px, 95vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.enroll-modal .modal-header {
+  padding: 0.75rem 1.25rem 0.6rem;
+  margin-bottom: 0;
+  position: static;
+  flex-shrink: 0;
+}
+
+.enroll-modal .modal-header h2 {
+  font-size: 1rem;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.enroll-modal .enroll-modal-subtitle {
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.enroll-modal .modal-body {
+  flex: 1;
+  min-height: 0;          /* clave para que flex + overflow funcione */
+  overflow-y: auto;
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.enroll-modal .modal-footer {
+  padding: 0.5rem 1.25rem 0.75rem;
+  flex-shrink: 0;
+}
+
+/* Lista de inscritos: scroll propio si hay muchos */
+.enroll-list {
+  max-height: none;       /* dejamos que el modal-body haga scroll */
+  overflow: visible;
+}
+
+/* Resultados de búsqueda: limitar para no empujar todo */
+.enroll-results {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Búsqueda más compacta */
+.enroll-search-input {
+  padding: 6px 12px 6px 30px;
+  font-size: 0.84rem;
+}
+
+.enroll-section-label {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+/* Filas más compactas */
+.enroll-list-row,
+.enroll-result-row {
+  padding: 7px 12px;
+}

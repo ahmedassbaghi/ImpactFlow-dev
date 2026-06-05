@@ -159,26 +159,43 @@ function EnrollmentModal({ program, onClose }: { program: Program; onClose: () =
 
   const enrolledIds = new Set(enrolled.map((p: Participant) => p.id));
 
-  const searchResults = search.trim()
-    ? allParticipants.filter(
-        (p: Participant) =>
-          !enrolledIds.has(p.id) &&
-          (p.first_name.toLowerCase().includes(search.toLowerCase()) ||
-            p.code.toLowerCase().includes(search.toLowerCase()))
-      )
+  const normalizedSearch = search.trim().toLowerCase();
+  const isSearching = normalizedSearch.length > 0;
+
+  const sortParticipants = (a: Participant, b: Participant) =>
+    a.first_name.localeCompare(b.first_name, "ca", {
+      sensitivity: "base",
+      numeric: true,
+    }) ||
+    a.code.localeCompare(b.code, "ca", {
+      sensitivity: "base",
+      numeric: true,
+    });
+
+  const sortedEnrolled = [...enrolled].sort(sortParticipants);
+
+  const searchResults = isSearching
+    ? [...allParticipants]
+        .filter(
+          (p: Participant) =>
+            p.first_name.toLowerCase().includes(normalizedSearch) ||
+            p.code.toLowerCase().includes(normalizedSearch)
+        )
+        .sort(sortParticipants)
     : [];
 
   const enroll = useMutation({
     mutationFn: (participantId: string) => enrollParticipant(program.id, participantId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["participants", "enrolled", program.id] });
-      setSearch("");
     },
   });
 
   const unenroll = useMutation({
     mutationFn: (participantId: string) => unenrollParticipant(program.id, participantId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["participants", "enrolled", program.id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["participants", "enrolled", program.id] });
+    },
   });
 
   return (
@@ -195,7 +212,6 @@ function EnrollmentModal({ program, onClose }: { program: Program; onClose: () =
         </div>
 
         <div className="modal-body">
-          {/* Search to add */}
           <div className="enroll-search-wrap">
             <div className="enroll-search-field">
               <Search size={14} strokeWidth={2} className="enroll-search-icon" />
@@ -207,63 +223,90 @@ function EnrollmentModal({ program, onClose }: { program: Program; onClose: () =
                 autoFocus
               />
             </div>
-            {searchResults.length > 0 && (
-              <div className="enroll-results">
-                {searchResults.map((p: Participant) => (
-                  <div key={p.id} className="enroll-result-row">
-                    <div className="enroll-result-info">
-                      <span className="enroll-result-name">{p.first_name}</span>
-                      <span className="enroll-result-code">{p.code}</span>
-                    </div>
-                    <button
-                      className="enroll-action-btn enroll-action-btn--add"
-                      onClick={() => enroll.mutate(p.id)}
-                      disabled={enroll.isPending}
-                    >
-                      <UserPlus size={13} strokeWidth={2} />
-                      Inscriure
-                    </button>
-                  </div>
-                ))}
+          </div>
+
+          {isSearching ? (
+            <>
+              <div className="enroll-section-label">
+                <Search size={13} strokeWidth={2} />
+                Resultats ({searchResults.length})
               </div>
-            )}
-            {search.trim() && searchResults.length === 0 && (
-              <p className="enroll-no-results">Cap participant coincideix amb la cerca.</p>
-            )}
-          </div>
 
-          {/* Enrolled list */}
-          <div className="enroll-section-label">
-            <Users size={13} strokeWidth={2} />
-            Inscrits ({enrolled.length})
-          </div>
+              {searchResults.length === 0 ? (
+                <p className="enroll-no-results">Cap participant coincideix amb la cerca.</p>
+              ) : (
+                <div className="enroll-list">
+                  {searchResults.map((p: Participant) => {
+                    const isEnrolled = enrolledIds.has(p.id);
 
-          {loadingEnrolled ? (
-            <div className="enroll-loading">Carregant…</div>
-          ) : enrolled.length === 0 ? (
-            <div className="enroll-empty">
-              Cap participant inscrit encara. Cerca i afegeix participants a dalt.
-            </div>
-          ) : (
-            <div className="enroll-list">
-              {enrolled.map((p: Participant) => (
-                <div key={p.id} className="enroll-list-row">
-                  <div className="enroll-result-info">
-                    <span className="enroll-result-name">{p.first_name}</span>
-                    <span className="enroll-result-code">{p.code}</span>
-                  </div>
-                  <button
-                    className="enroll-action-btn enroll-action-btn--remove"
-                    onClick={() => unenroll.mutate(p.id)}
-                    disabled={unenroll.isPending}
-                    title="Desinscriure"
-                  >
-                    <UserMinus size={13} strokeWidth={2} />
-                    Treure
-                  </button>
+                    return (
+                      <div key={p.id} className="enroll-result-row">
+                        <div className="enroll-result-info">
+                          <span className="enroll-result-name">{p.first_name}</span>
+                          <span className="enroll-result-code">{p.code}</span>
+                        </div>
+
+                        {isEnrolled ? (
+                          <button
+                            className="enroll-action-btn enroll-action-btn--remove"
+                            onClick={() => unenroll.mutate(p.id)}
+                            disabled={unenroll.isPending}
+                            title="Desinscriure"
+                          >
+                            <UserMinus size={13} strokeWidth={2} />
+                            Treure
+                          </button>
+                        ) : (
+                          <button
+                            className="enroll-action-btn enroll-action-btn--add"
+                            onClick={() => enroll.mutate(p.id)}
+                            disabled={enroll.isPending}
+                          >
+                            <UserPlus size={13} strokeWidth={2} />
+                            Inscriure
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="enroll-section-label">
+                <Users size={13} strokeWidth={2} />
+                Inscrits ({sortedEnrolled.length})
+              </div>
+
+              {loadingEnrolled ? (
+                <div className="enroll-loading">Carregant…</div>
+              ) : sortedEnrolled.length === 0 ? (
+                <div className="enroll-empty">
+                  Cap participant inscrit encara. Cerca i afegeix participants a dalt.
+                </div>
+              ) : (
+                <div className="enroll-list">
+                  {sortedEnrolled.map((p: Participant) => (
+                    <div key={p.id} className="enroll-list-row">
+                      <div className="enroll-result-info">
+                        <span className="enroll-result-name">{p.first_name}</span>
+                        <span className="enroll-result-code">{p.code}</span>
+                      </div>
+                      <button
+                        className="enroll-action-btn enroll-action-btn--remove"
+                        onClick={() => unenroll.mutate(p.id)}
+                        disabled={unenroll.isPending}
+                        title="Desinscriure"
+                      >
+                        <UserMinus size={13} strokeWidth={2} />
+                        Treure
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
