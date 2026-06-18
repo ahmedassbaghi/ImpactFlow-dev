@@ -35,8 +35,8 @@ git --version
 ### 1. Clona el repositori
 
 ```bash
-git clone https://github.com/ahmedassbaghi/ImpactFlow-dev.git
-cd ImpactFlow-dev
+git clone https://github.com/ahmedassbaghi/ImpactFlow.git
+cd ImpactFlow
 ```
 
 ### 2. Backend — instal·la dependències
@@ -155,7 +155,7 @@ Si has carregat dades de prova amb `add_varied_records.py`:
 ## Estructura del repositori
 
 ```
-ImpactFlow-dev/
+ImpactFlow/
 ├── apps/
 │   ├── backend/             # FastAPI + algoritmes
 │   │   ├── app/
@@ -218,6 +218,15 @@ npx tsc --noEmit
 
 ---
 
+## Autors
+
+- Ahmed Assbaghi
+- Francisco Ruiz
+- Oriol Ribas
+- Ivan Rodríguez
+
+---
+
 ## Llicència
 
-Projecte intern de la Fundació Narinaan. Contacta amb l'equip per a qualsevol ús extern.
+Aquest projecte es distribueix sota la llicència [Apache License 2.0](LICENSE).
